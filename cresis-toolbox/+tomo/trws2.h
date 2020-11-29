@@ -1,4 +1,4 @@
-// trws.h: Some very helpful variables and functions.
+// trws2.h: Some very helpful variables and functions.
 // By Mingze Xu, November 2016
 //
 // Minor style changes to comply with new C++ standards: Victor Berger 2018

@@ -1,12 +1,13 @@
-// trws.cpp
+// trws2.cpp
 //
 // Extract 3D surface of ice-bed layers
 //
 // Authors:
 //  Mingze Xu, July 2016
 //  Basic prior/unary cost, binary cost/weight, John Paden 2020
+//  Traversal patterns, Debug Output, Skip Columns, Reece Mathews 2020
 //
-// See also: trws.h
+// See also: trws2.h
 //
 // mex -v -largeArrayDims trws2.cpp
 
@@ -16,6 +17,7 @@
 using namespace std;
 #include "mex.h"
 #include "trws2.h"
+
 
 void print_time(void)
 {
@@ -48,10 +50,10 @@ public:
   // message_DIRECTION: mNt*mNsv*mNx message matrixes. These are like an inbox:
   // they represent messages sent from other nodes to the node with the
   // corresponding index.
-  float *mMessage_Left; // Message from node to the left
-  float *mMessage_Up; // Message from node below
-  float *mMessage_Right; // Message from node to the right
-  float *mMessage_Down; // Message from node above
+  float *mMessage_Left; // Message or inbox from node to the left
+  float *mMessage_Up; // Message or inbox from node above
+  float *mMessage_Right; // Message or inbox from node to the right
+  float *mMessage_Down; // Message or inbox from node below
   
   // mAT_Slope: along-track expected slope (should generally compensate for radar platform elevation changes)
   const float *mAT_Slope;
@@ -63,27 +65,35 @@ public:
   const float *mCT_Weight;
   // mBounds: fast-time dimension bounds
   const unsigned int *mBounds;
-  
-  // Result
-  unsigned int *mResult;
+  // mCT_Bounds_Right: cross-track dimension bounds, right
+  const unsigned int *mCT_Bounds_Right;
+  // mCT_Bounds_Left: cross-track dimension bounds, left
+  const unsigned int *mCT_Bounds_Left;
+  // mTraversal_Method: Value in range 0-2. 0: Original center-out traversal method. 1: 4 permutation traversal. 2: 2 perm optimized traversal
+  const unsigned int mTraversal_Method;
+
+  float *mResult;
+  float *mDebug;
     
   TRWS(const float *image, const size_t *dim_image, const float *at_slope, const float *at_weight,
           const float *ct_slope, const float *ct_weight, const unsigned int max_loops,
-          const unsigned int *bounds, unsigned int *result)
+          const unsigned int *bounds, const unsigned int traversal_method, 
+          const unsigned int *ct_bounds_left, const unsigned int *ct_bounds_right, float *result, float *debug)
           : mImage(image), mAT_Slope(at_slope), mAT_Weight(at_weight), mCT_Slope(ct_slope), mCT_Weight(ct_weight),
-            mMax_Loops(max_loops), mBounds(bounds), mResult(result) {
+            mMax_Loops(max_loops), mBounds(bounds), mTraversal_Method(traversal_method), mCT_Bounds_Left(ct_bounds_left), 
+            mCT_Bounds_Right(ct_bounds_right), mResult(result), mDebug(debug) {
             // Set dimensions
-            mNt      = dim_image[0];
-            mNsv     = dim_image[1];
-            mNx      = dim_image[2];
+            mNt  = dim_image[0];
+            mNsv = dim_image[1];
+            mNx  = dim_image[2];
             mNsv_center = round(mNsv/2);
 
             // Allocate message inboxes
             // calloc sets the values to zero which corresonds to floating point value of 0
-            mMessage_Left = (float*)calloc(mNt*mNsv*mNx,sizeof(float));
-            mMessage_Right = (float*)calloc(mNt*mNsv*mNx,sizeof(float));
-            mMessage_Up = (float*)calloc(mNt*mNsv*mNx,sizeof(float));
-            mMessage_Down = (float*)calloc(mNt*mNsv*mNx,sizeof(float));
+            mMessage_Left = reinterpret_cast<float *>(calloc(mNt*mNsv*mNx,sizeof(float)));
+            mMessage_Right = reinterpret_cast<float *>(calloc(mNt*mNsv*mNx,sizeof(float)));
+            mMessage_Up = reinterpret_cast<float *>(calloc(mNt*mNsv*mNx,sizeof(float)));
+            mMessage_Down = reinterpret_cast<float *>(calloc(mNt*mNsv*mNx,sizeof(float)));
           }
           
           ~TRWS() {
@@ -106,7 +116,6 @@ void TRWS::set_result() {
     for (size_t h = 0; h < mNsv; h++) {
       float min_val = INFINITY;
       size_t best_result = mNx;
-      
       for (size_t d = mBounds[2*w], message_idx = h*mNt + w*mNsv*mNt+mBounds[2*w]; d <= mBounds[2*w+1]; d++, message_idx++) {
         // Unary cost
         float temp = -mImage[message_idx];
@@ -115,7 +124,11 @@ void TRWS::set_result() {
         temp += mMessage_Up[message_idx];
         temp += mMessage_Right[message_idx];
         temp += mMessage_Down[message_idx];
-        
+
+        if (mDebug) {
+          mDebug[message_idx] = temp;
+        }
+
         // Check to see if this d is the minimum
         if (temp < min_val) {
           min_val = temp;
@@ -123,8 +136,9 @@ void TRWS::set_result() {
         }
       }
       
-      mResult[result_idx] = (int)(best_result+1);
-      result_idx = result_idx + 1;
+      mResult[result_idx] = static_cast<int>(best_result+1);
+
+      result_idx++;
     }
   }
 }
@@ -145,7 +159,7 @@ void TRWS::solve() {
   for (int i=mNsv_center+1; i<mNsv; i++) {
     mNsvs_array[i] = i; // From center to right
   }
-  
+
   // Arrays for holding all the incoming messages. On each iteration, every
   // pixel sends out a message in all four directions (up/down in
   // cross-track and left/right in along-track) and this message is the sum
@@ -153,7 +167,7 @@ void TRWS::solve() {
   // the message that came from the direction that the message is going).
   float message_sum[mNt];
   float message_in[mNt];
-  
+
   time_t start_time;
   time(&start_time);
   for (int loop = 0; loop < mMax_Loops; loop++) {
@@ -166,10 +180,11 @@ void TRWS::solve() {
       mexPrintf("  loop: %2d of %2d                              \n", loop+1, mMax_Loops);
     }
 
+    bool odd_iteration = loop%2;
     // Loop through along-track dimension
     for (size_t w_idx = 0; w_idx < mNx; w_idx++) {
       size_t w;
-      if (loop%2) {
+      if (odd_iteration) {
         // Iterating right to left
         w = mNx-1-w_idx;
       } else {
@@ -183,13 +198,53 @@ void TRWS::solve() {
       
       // Loop through cross-track dimension
       for (size_t h_idx = 0; h_idx < mNsv; h_idx++) {
-        // Iterate from the center always 
-        size_t h = mNsvs_array[h_idx];
+        // Switch iteration direction every 2 loops
+        size_t h = 0;
+        bool backward = false;
+        bool pass_all = true;
+
+        if (mTraversal_Method == 0) {
+          // Iterate from the center always 
+          h = mNsvs_array[h_idx];
+
+        } else {
+          
+          if (mTraversal_Method == 1) {
+            // 4 iteration permutations. Only change inner traversal every two loops
+            backward = (loop >> 1) % 2 == 0;
+
+          } else if (mTraversal_Method == 2) {
+            // 2 iteration permutations. Change inner traversal with outer.
+            backward = odd_iteration;
+            pass_all = false;
+          }
+
+          if (backward) {
+            // Iterating bottom to top
+            h = mNsv - 1 - h_idx;
+          } else {
+            // Iterating top to bottom
+            h = h_idx;
+          }
+        }
+
         // Index to start of current range line in along-track/elevation angle in cross-track
         size_t cur_message_idx = (h + w*mNsv)*mNt;
         int cur_rbin_start = mBounds[2*w];
         int cur_rbin_stop = mBounds[2*w+1];
-        
+
+        if (mCT_Bounds_Left != 0 && mCT_Bounds_Right != 0) {
+          bool outside = true;
+          for (int d = cur_rbin_start; d <= cur_rbin_stop; d++) {
+            if (h >= mCT_Bounds_Left[w*mNt + d] && h <= mCT_Bounds_Right[w*mNt + d]) {
+              outside = false;
+              break;
+            }
+          }
+          if (outside) {
+            continue;
+          }
+        }
         // Message to node on the left of current
         //   Sum all input messages and create the message for the node on the right
         //   Messages the current node sends that node is called "mMessage_Right" for that node
@@ -199,7 +254,7 @@ void TRWS::solve() {
           message_sum[d] = mMessage_Up[message_idx] + mMessage_Right[message_idx] + mMessage_Down[message_idx] - mImage[message_idx];
           // message_in for node on the right (w-1) excludes mMessage_Left which came from the node on the right
         }
-        if (w > 0) {
+        if (w > 0 && (odd_iteration || pass_all)) {
           // Message destination index
           size_t msg_dest_idx = (h + (w-1)*mNsv)*mNt;
           int dest_rbin_start = mBounds[2*w-2];
@@ -227,7 +282,7 @@ void TRWS::solve() {
           // message_in for node above (h-1) the current excludes mMessage_Up
           message_in[d] = message_sum[d] - mMessage_Up[message_idx];
         }
-        if (h > 0) {
+        if (h > 0 && (odd_iteration || pass_all)) {
           size_t msg_dest_idx = (h-1 + w*mNsv)*mNt;
           int dest_rbin_start = mBounds[2*w];
           int dest_rbin_stop = mBounds[2*w+1];
@@ -250,7 +305,7 @@ void TRWS::solve() {
         for (size_t d = cur_rbin_start, message_idx = cur_message_idx+cur_rbin_start; d <= cur_rbin_stop; d++, message_idx++) {
           message_in[d] = message_sum[d] - mMessage_Right[message_idx];
         }
-        if (w < mNx-1) {
+        if (w < mNx-1 && (!odd_iteration || pass_all)) {
           size_t msg_dest_idx = (h + (w+1)*mNsv)*mNt;
           int dest_rbin_start = mBounds[2*w+2];
           int dest_rbin_stop = mBounds[2*w+3];
@@ -272,7 +327,7 @@ void TRWS::solve() {
         for (size_t d = cur_rbin_start, message_idx = cur_message_idx+cur_rbin_start; d <= cur_rbin_stop; d++, message_idx++) {
           message_in[d] = message_sum[d] - mMessage_Down[message_idx];
         }
-        if (h < mNsv-1) {
+        if (h < mNsv-1 && (!odd_iteration || pass_all)) {
           size_t msg_dest_idx = (h+1 + w*mNsv)*mNt;
           int dest_rbin_start = mBounds[2*w];
           int dest_rbin_stop = mBounds[2*w+1];
@@ -297,87 +352,140 @@ void TRWS::solve() {
 
 // MATLAB FUNCTION START
 void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
-  if (nrhs != 7 || nlhs != 1) {
-    mexErrMsgTxt("Usage: uint32 labels = trws(single image, single at_slope, single at_weight, single ct_slope, single ct_weight, uint32 bounds, uint32 max_loops)\n\n  size(image) is [Nt,Nsv,Nx]\n  mean along-track slope numel(at_slope) is Nx (last element not used)\n  along-track slope weight numel(at_weight) is 1\n  cross-track slope coefficients numel(ct_slope) is Nsv  (last element not used)\n  cross-track slope weight numel(ct_weight) is Nsv  (last element not used)\n  numel(max_loops) is 1");
+  if (nrhs < 7 || nrhs > 10 || nlhs < 1 || nlhs > 2) {
+    mexErrMsgTxt("Usage: [float surface, [debug_output]] = trws(single image, single at_slope, single at_weight, single ct_slope, single ct_weight, uint32 max_loops, uint32 bounds, [unint32 traversal_method, uint32 ct_bounds_left, uint32 ct_bounds_right])\n\n  size(image) is [Nt,Nsv,Nx]\n  mean along-track slope numel(at_slope) is Nx (last element not used)\n  along-track slope weight numel(at_weight) is 1\n  cross-track slope coefficients numel(ct_slope) is Nsv  (last element not used)\n  cross-track slope weight numel(ct_weight) is Nsv  (last element not used)\n  numel(max_loops) is 1\n  numel(bounds) is 2*size(image,3)\n  numel(traversal_method) is 1\n  numel(ct_bounds_left/right) is size(image, 1)*size(image, 3)");
   }
+
+  int arg = -1;
   
+  arg++;
   // image ================================================================
-  if (!mxIsSingle(prhs[0])) {
+  if (!mxIsSingle(prhs[arg])) {
     mexErrMsgTxt("usage: image must be type single");
   }
-  if (mxGetNumberOfDimensions(prhs[0]) != 3) {
+  if (mxGetNumberOfDimensions(prhs[arg]) != 3) {
     mexErrMsgTxt("usage: image must be a 3D matrix [rows=Nt, columns=Ndoa, slices=Nx]");
   }
-  const size_t *dim_image = mxGetDimensions(prhs[0]);
-  float *image = (float *)mxGetData(prhs[0]);
+  const size_t *dim_image = mxGetDimensions(prhs[arg]);
+  float *image = reinterpret_cast<float *>(mxGetData(prhs[arg]));
   // dim_image[0]: Nt rows of one slice (fast-time: the hidden state we are trying to estimate)
   // dim_image[1]: Nsv cols of one slice (cross-track dimension)
   // dim_image[2]: Nx number of slices (along-track dimension)
   
+  arg++;
   // at_slope =============================================================
-  if (!mxIsSingle(prhs[1])) {
+  if (!mxIsSingle(prhs[arg])) {
     mexErrMsgTxt("usage: at_slope must be type single (float32)");
   }
-  if (mxGetNumberOfElements(prhs[1]) != dim_image[2]) {
+  if (mxGetNumberOfElements(prhs[arg]) != dim_image[2]) {
     mexErrMsgTxt("usage: at_slope must have numel equal to size(image,3)");
   }
-  float *at_slope = (float *)mxGetData(prhs[1]);
+  float *at_slope = reinterpret_cast<float *>(mxGetData(prhs[arg]));
   
+  arg++;
   // at_weight ============================================================
-  if (!mxIsSingle(prhs[2])) {
+  if (!mxIsSingle(prhs[arg])) {
     mexErrMsgTxt("usage: at_weight must be type single (float32)");
   }
-  if (mxGetNumberOfElements(prhs[2]) != 1) {
+  if (mxGetNumberOfElements(prhs[arg]) != 1) {
     mexErrMsgTxt("usage: at_weight must have numel equal to 1");
   }
-  float *at_weight = (float *)mxGetData(prhs[2]);
+  float *at_weight = reinterpret_cast<float *>(mxGetData(prhs[arg]));
   
+  arg++;
   // ct_slope =============================================================
-  if (!mxIsSingle(prhs[3])) {
+  if (!mxIsSingle(prhs[arg])) {
     mexErrMsgTxt("usage: ct_slope must be type single (float32)");
   }
-  const size_t *dim_ct_slope = mxGetDimensions(prhs[3]);
+  const size_t *dim_ct_slope = mxGetDimensions(prhs[arg]);
   if (dim_ct_slope[0] != dim_image[1] || dim_ct_slope[1] != dim_image[2]) {
     mexErrMsgTxt("usage: ct_slope must have size(ct_slope,1)=size(image,2) and size(ct_slope,2)=size(image,3)");
   }
-  float *ct_slope = (float *)mxGetData(prhs[3]);
+  float *ct_slope = reinterpret_cast<float *>(mxGetData(prhs[arg]));
   
+  arg++;
   // ct_weight ============================================================
-  if (!mxIsSingle(prhs[4])) {
+  if (!mxIsSingle(prhs[arg])) {
     mexErrMsgTxt("usage: ct_weight must be type single (float32)");
   }
-  if (mxGetNumberOfElements(prhs[4]) != dim_image[1]) {
+  if (mxGetNumberOfElements(prhs[arg]) != dim_image[1]) {
     mexErrMsgTxt("usage: ct_weight must have numel equal to size(image,2)");
   }
-  float *ct_weight = (float *)mxGetData(prhs[4]);
+  float *ct_weight = reinterpret_cast<float *>(mxGetData(prhs[arg]));
   
+  arg++;
   // max_loops ===========================================================
-  if (!mxIsClass(prhs[5],"uint32")) {
+  if (!mxIsClass(prhs[arg],"uint32")) {
     mexErrMsgTxt("usage: max_loops must be type unsigned int32");
   }
-  if (mxGetNumberOfElements(prhs[5]) != 1) {
+  if (mxGetNumberOfElements(prhs[arg]) != 1) {
     mexErrMsgTxt("usage: max_loops must have numel equal to 1");
   }
-  unsigned int *max_loops = (unsigned int *)mxGetData(prhs[5]);
+  unsigned int max_loops = *reinterpret_cast<unsigned int *>(mxGetData(prhs[arg]));
   
+  arg++;
   // bounds ===============================================================
-  if (!mxIsClass(prhs[6],"uint32")) {
+  if (!mxIsClass(prhs[arg],"uint32")) {
     mexErrMsgTxt("usage: bounds must be type unsigned int32");
   }
-  const size_t *dim_bounds = mxGetDimensions(prhs[6]);
-  if (dim_bounds[0] != dim_image[1] || dim_bounds[1] != dim_image[2]) {
-    mexErrMsgTxt("usage: bounds must have size(bounds,1)=size(image,2) and size(bounds,2)=size(image,3)");
+  if (mxGetNumberOfElements(prhs[arg]) != dim_image[2]*2) {
+    mexErrMsgTxt("usage: bounds must have numel equal to 2*size(image,3)");
   }
-  unsigned int *bounds = (unsigned int *)mxGetData(prhs[6]);
+  unsigned int *bounds = reinterpret_cast<unsigned int *>(mxGetData(prhs[arg]));
   
-  // ====================================================================
+  // traversal_method ===============================================================
+  unsigned int traversal_method = 0;
+  arg++;
+  if (nrhs > arg) {
+    if (!mxIsClass(prhs[arg],"uint32")) {
+      mexErrMsgTxt("usage: traversal_method must be type unsigned int32");
+    }
+    if (mxGetNumberOfElements(prhs[arg]) != 1) {
+      mexErrMsgTxt("usage: traversal_method must have numel equal to 1");
+    }
+    traversal_method = *reinterpret_cast<unsigned int *>(mxGetData(prhs[arg]));
+  }
+
+  unsigned int *ct_bounds_left = 0;
+  unsigned int *ct_bounds_right = 0;
+  arg++;
+  if (nrhs > arg) {
+    if (nrhs <= arg + 1) {
+      mexErrMsgTxt("usage: ct_bounds_right must be present as well when given ct_bounds_left.");
+    }
+    // ct_bounds_left ===============================================================
+    if (!mxIsClass(prhs[arg],"uint32")) {
+      mexErrMsgTxt("usage: ct_bounds_left must be type unsigned int32");
+    }
+    if (mxGetNumberOfElements(prhs[arg]) != dim_image[0]*dim_image[2]) {
+      mexErrMsgTxt("usage: ct_bounds_left must have numel equal to size(image,1)*size(image,3)");
+    }
+    ct_bounds_left = reinterpret_cast<unsigned int *>(mxGetData(prhs[arg]));
+    arg++;
+    // ct_bounds_right ===============================================================
+    if (!mxIsClass(prhs[arg],"uint32")) {
+      mexErrMsgTxt("usage: ct_bounds_right must be type unsigned int32");
+    }
+    if (mxGetNumberOfElements(prhs[arg]) != dim_image[0]*dim_image[2]) {
+      mexErrMsgTxt("usage: ct_bounds_right must have numel equal to size(image,1)*size(image,3)");
+    }
+    ct_bounds_right = reinterpret_cast<unsigned int *>(mxGetData(prhs[arg]));
+  }
+
   
   // Allocate output
-  plhs[0] = mxCreateNumericMatrix(dim_image[1], dim_image[2], mxUINT32_CLASS, mxREAL);
-  unsigned int *result = (unsigned int *)mxGetData(plhs[0]);
+  plhs[0] = mxCreateNumericMatrix(dim_image[1], dim_image[2], mxSINGLE_CLASS, mxREAL);
+  float *result = reinterpret_cast<float *>(mxGetData(plhs[0]));
+
+  float *debug = 0;
+  if (nlhs == 2) {
+    // Debug mode
+    plhs[1] = mxCreateNumericArray(3, dim_image, mxSINGLE_CLASS, mxREAL);
+    debug = reinterpret_cast<float *>(mxGetData(plhs[1]));
+  }
   
-  // Run TRWS algorithm
-  TRWS obj(image, dim_image, at_slope, at_weight, ct_slope, ct_weight, *max_loops, bounds, result);
-  
+  // RUN TRWS2
+  TRWS obj(image, dim_image, at_slope, at_weight, ct_slope, ct_weight, max_loops, bounds, traversal_method, ct_bounds_left, ct_bounds_right, result, debug);
+
   obj.solve();
 }
