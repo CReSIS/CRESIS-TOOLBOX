@@ -11,8 +11,9 @@
 % =====================================================================
 param_override = [];
 
-params = read_param_xls(ct_filename_param('accum_param_2018_Antarctica_TObas.xls'));
+% params = read_param_xls(ct_filename_param('accum_param_2018_Antarctica_TObas.xls'));
 % params = read_param_xls(ct_filename_param('rds_param_2018_Antarctica_Ground.xls'));
+params = read_param_xls(ct_filename_param('rds_param_2014_Greenland_P3.xls'));
 
 % Example to run specific segments and frames by overriding parameter spreadsheet values
 % params = ct_set_params(params,'cmd.array',0);

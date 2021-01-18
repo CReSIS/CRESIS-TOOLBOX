@@ -198,6 +198,14 @@ if ~isfield(param.array,'fcs_pos_averaged') || isempty(param.array.fcs_pos_avera
   end
 end
 
+if ~isfield(param.array,'sv_model') || isempty(param.array.sv_model)
+  param.array.sv_model = 'ideal';
+end
+
+if ~isfield(param.array,'sv_lut_path') || isempty(param.array.sv_lut_path)
+  param.array.sv_lut_path = 'analysis';
+end
+
 %% Setup processing
 % =====================================================================
 

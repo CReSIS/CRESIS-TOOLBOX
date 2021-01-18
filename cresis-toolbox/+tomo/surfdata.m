@@ -90,15 +90,6 @@ classdef surfdata < handle
     
     function obj = surfdata(source,surfdata_source)
       %% surfdata constructor
-      %
-      % source: several options to specify a source for the echogram
-      % information. 1. It can be a string containing the full filepath to
-      % an array output (echogram). 2. The structure loaded from such an
-      % echogram file. 3. An existing surfdata class/structure.
-      %
-      % surfdata_source: ct_filename_out "fn" string argument (this is
-      % where the output will be stored if a save command is run). Default
-      % is "surf" for CSARP_surf.
       
       if nargin < 2 || isempty(surfdata_source)
         surfdata_source = 'surf'; % CSARP_surf directory
@@ -912,27 +903,28 @@ classdef surfdata < handle
     function run_update_file()
       %% run_update_file
       
-      % params = read_param_xls(ct_filename_param('rds_param_2014_Greenland_P3.xls'),'');
-      % params = ct_set_params(params,'cmd.generic',0);
-      % ct_set_params(params,'cmd.generic',1,'day_seg','20140401_03|20140506_01|20140325_05|20140325_06|20140325_07');
-      % param_override.cmd.frms = [];
+      params = read_param_xls(ct_filename_param('rds_param_2014_Greenland_P3.xls'),'');
+%       params = ct_set_params(params,'cmd.generic',0);
+      params = ct_set_params(params,'cmd.generic',1,'day_seg','20140506_01');
+      param_override.cmd.frms = [2 3 4];
       
       % params = read_param_xls(ct_filename_param('rds_param_2009_Antarctica_TO.xls'));
       % params = ct_set_params(params,'cmd.generic',0);
       % params = ct_set_params(params,'cmd.generic',1,'day_seg','20091224_01');
       % param_override.cmd.frms = [];
-      % param_override.update.input = 'surfData';
-      % param_override.update.output = 'surfData_v2';
-      % param_override.update.echogram = 'music3D';
+      param_override.update.input = 'surfData_sar';
+      param_override.update.output = 'surf_sar';
+      param_override.update.echogram = 'standard_air';
+%       param_override.update.echogram = 'CSARP_post/standard';
       
-      params = read_param_xls(ct_filename_param('rds_param_2019_Antarctica_Ground.xls'));
-      params = ct_set_params(params,'cmd.generic',0);
-      params = ct_set_params(params,'cmd.generic',1,'day_seg','20200107_01');
-      param_override.cmd.frms = [];
-      param_override.update.input = 'surfData_paden';
-      param_override.update.output = 'surfData_paden2';
-      param_override.update.echogram = 'music3D_paden';
-      
+%       params = read_param_xls(ct_filename_param('rds_param_2019_Antarctica_Ground.xls'));
+%       params = ct_set_params(params,'cmd.generic',0);
+%       params = ct_set_params(params,'cmd.generic',1,'day_seg','20200107_01');
+%       param_override.cmd.frms = [];
+%       param_override.update.input = 'surfData_paden';
+%       param_override.update.output = 'surfData_paden2';
+%       param_override.update.echogram = 'music3D_paden';
+%       
       global gRadar;
       
       % Input checking
@@ -958,8 +950,8 @@ classdef surfdata < handle
           
           fn = fullfile(ct_filename_out(param,param.update.input,''),sprintf('Data_%s_%03d.mat',param.day_seg,frm));
           fn_cur_ver = fullfile(ct_filename_out(param,param.update.output,''),sprintf('Data_%s_%03d.mat',param.day_seg,frm));
-          echogram_fn = fullfile(ct_filename_out(param,param.update.echogram,''),sprintf('Data_%s_%03d.mat',param.day_seg,frm));
-          
+          echogram_fn = fullfile(ct_filename_out(param,param.update.echogram,''),sprintf('Data_img_01_%s_%03d.mat',param.day_seg,frm));
+%           echogram_fn = fullfile(ct_filename_out(param,param.update.echogram,''),sprintf('Data_%s_%03d.mat',param.day_seg,frm));
           fprintf('Update\n  %s\n  %s\n', fn, echogram_fn);
           tomo.surfdata.update_file(fn,fn_cur_ver,echogram_fn);
         end
@@ -1052,7 +1044,6 @@ classdef surfdata < handle
         
       elseif fn_version == 2.0
         %% update_file: v2.0
-        
         if ~isempty(whos('-file',echogram_fn,'param_array'))
           tmp = load(echogram_fn,'param_array','param_records');
           tmp.param = tmp.param_array;
@@ -1087,8 +1078,6 @@ classdef surfdata < handle
           if all(surf_new.surf(surf_idx).y(:) == 0 | surf_new.surf(surf_idx).y(:) == 1)
             surf_new.surf(surf_idx).y = surf_new.surf(surf_idx).y;
           elseif all(~isfinite(surf_new.surf(surf_idx).y(:)) | surf_new.surf(surf_idx).y(:) < 1 )
-            warning('This code is only for a few special nonstandard files. E.g. snapshots which stored twtt instead of time bins.');
-            keyboard
             % Assume y-values are twtt (this should never happen)
             surf_new.surf(surf_idx).y = surf_new.surf(surf_idx).y;
           else
@@ -1184,6 +1173,9 @@ classdef surfdata < handle
       %
       % param:  struct with processing parameters or function handle to
       % script with processing parameters
+      %   .add_surf_from_dem.delta_at = along track decimation factor
+      %   .add_surf_from_dem.theta_vec 
+      %   .add_surf_from_dem.dem_res 
       %
       % param_override: parameters in this struct override parameters in
       % param.  This struct must also contain the gRdar fields.
@@ -1213,7 +1205,7 @@ classdef surfdata < handle
       % =================================================================
       
       % Load frames file
-      load(ct_filename_support(param, '', 'frames'));
+      frames = load(ct_filename_support(param, '', 'frames'));
       
       % If no frames specified, then do all frames
       if isempty(param.cmd.frms)
@@ -1239,13 +1231,17 @@ classdef surfdata < handle
         param.add_surf_from_dem.dem_res = 10;
       end
       
-      if ~isfield(param.add_surf_from_dem,'theta_vec') || isempty(param.add_surf_from_dem.theta_vec)
-        param.add_surf_from_dem.theta_vec = -85:85;
+      if ~isfield(param.add_surf_from_dem,'theta_bins') || isempty(param.add_surf_from_dem.theta_bins)
+        param.add_surf_from_dem.theta_bins = [-85:85].';
       end
       
       if ~isfield(param.add_surf_from_dem,'dem_guard') || isempty(param.add_surf_from_dem.dem_guard)
         param.add_surf_from_dem.dem_guard = 12e3;
       end
+      
+      if ~isfield(param.add_surf_from_dem,'delta_at') || isempty(param.add_surf_from_dem.delta_at)
+        param.add_surf_from_dem.delta_at = 10;
+      end      
       
       if ~isfield(param.add_surf_from_dem,'ice_mask_fn') || isempty(param.add_surf_from_dem.ice_mask_fn)
         param.add_surf_from_dem.ice_mask_fn = [];
@@ -1268,19 +1264,26 @@ classdef surfdata < handle
       
       
       if ~isfield(param.add_surf_from_dem,'surf_out_path') || isempty(param.add_surf_from_dem.surf_out_path)
-        param.add_surf_from_dem.surf_out_path = '';
+        param.add_surf_from_dem.surf_out_path = 'surf_sar';
+      end
+      
+      if ~isfield(param.add_surf_from_dem,'in_path') || isempty(param.add_surf_from_dem.in_path)
+        param.add_surf_from_dem.surf_out_path = 'sar';
       end
       
       %% add_surf_from_dem: Setup
       % =====================================================================
       
       % Load in sar coordinates file
-      % Currently supports default path only -- FIX THIS??
-      sar_coord_fn = fullfile(ct_filename_out(param,'sar',''),'sar_coord.mat');
+
+      sar_coord_fn = fullfile(ct_filename_out(param,param.add_surf_from_dem.in_path,''),'sar_coord.mat')
       sar_coord = load(sar_coord_fn);
       
       % Load records file
       records = records_load(param);
+      
+      % Physical constants
+      physical_constants;
       
       % Loop over frames
       for frm_idx = 1:length(param.cmd.frms)
@@ -1297,7 +1300,7 @@ classdef surfdata < handle
         
         
         % The following is for Debug only
-        % res(2) = recs(1) + 20000;
+%         res(2) = recs(1) + 2000;
         
         % Find gps at frame boundaries and use this to mask out FCS of a
         % frame
@@ -1316,20 +1319,29 @@ classdef surfdata < handle
         frm_y         = cross(frm_z,frm_x);
         
         % Along track decimation factor
-        delta_at      = 10;
+        delta_at      = param.add_surf_from_dem.delta_at;
         
-        % Create surfdata
-        sd = tomo.surfdata();
-        sd.param = param;
-        sd.param.load.frm = frm;
-        sd.gps_time = frm_gps_time(1:delta_at:end);
-        sd.fcs.origin = frm_origin(:,1:delta_at:end);
+        % Create surface data structure with necessary fields
+        sd = [];
         sd.fcs.x = frm_x(:,1:delta_at:end);
         sd.fcs.z = frm_z(:,1:delta_at:end);
         sd.fcs.y = frm_y(:,1:delta_at:end);
-        sd.theta = param.add_surf_from_dem.theta_vec(:);
-        sd.time = zeros(0,1);
+        sd.fcs.origin = frm_origin(:,1:delta_at:end);
+        sd.gps_time = frm_gps_time(1:delta_at:end);
+        sd.gps_source = sar_coord.gps_source;
+        sd.param.day_seg = param.day_seg;
+        sd.param.load.frm = frm;
+        sd.param.radar.lever_arm_fh = param.radar.lever_arm_fh;
+        sd.param.radar_name = param.radar_name;
+        sd.param.records.gps.time_offset = param.records.gps.time_offset;
+        sd.param.season_name = param.season_name;
+        sd.param.sw_version = current_software_version;
+        sd.file_type = 'surf';
+        sd.surf(1) = tomo.surfdata.empty_surf();
+        sd.surf(2) = tomo.surfdata.empty_surf();
+        sd = tomo.surfdata(sd,param.add_surf_from_dem.surf_out_path);
         
+        %
         clear frm_gps_time frm_origin frm_x frm_y frm_z
         
         %% add_surf_from_dem: Geotiff and Ice Mask
@@ -1408,11 +1420,35 @@ classdef surfdata < handle
         end
         
         if 0
-          figure(1);clf;
-          imagesc(DEM_x,DEM_y,DEM);
+          figure(10);clf;
+          % Convert DEM ecef points to geodetic
+          imagesc(DEM_x.*1e-3,DEM_y.*1e-3,DEM.*1e-3);
           hold on;
-          plot(frm_x,frm_y,'r');
-          keyboard;
+          plot(frm_x.*1e-3,frm_y.*1e-3,'rx','LineWidth',2);
+          set(gca,'TickLabelInterpreter','latex')
+          set(gca,'FontSize',14)
+          xlabel('X (km)','Interpreter','latex','FontSize',14)
+          ylabel('Y (km)','Interpreter','latex','FontSize',14)
+          title('ArcticDEM 20140325 07 002','FontSize',18,'Interpreter','latex')
+          xlim([-880 -810]);
+          ylim([-830 -750]);
+%           out_fn1 = 'arctic_dem_20140325_07_002.fig';
+%           savefig(10,out_fn1);
+          
+          figure(2);clf;
+          % Convert DEM ecef points to geodetic
+          imagesc(ice_mask_all.X.*1e-3,ice_mask_all.Y.*1e-3,ice_mask_all.mask);
+          hold on;
+          plot(frm_x.*1e-3,frm_y.*1e-3,'rx','LineWidth',2);
+          set(gca,'TickLabelInterpreter','latex')
+          set(gca,'FontSize',14)
+          xlabel('X (km)','Interpreter','latex','FontSize',14)
+          ylabel('Y (km)','Interpreter','latex','FontSize',14)
+          title('Ice Mask 20140325 07 002','FontSize',18,'Interpreter','latex')
+          xlim([-880 -810]);
+          ylim([-830 -750]);
+%            out_fn2 = 'ice_mask_20140325_07_002.fig';
+%           savefig(2,out_fn2);      
         end
         
         DEM_x_mesh = repmat(DEM_x,[size(DEM,1) 1]);
@@ -1422,7 +1458,7 @@ classdef surfdata < handle
         %% add_surf_from_dem: twtt
         % For every position along the aperture, add theta dependent TWTT to DEM from origin of the FCS
         Nx    = size(sd.fcs.x,2);
-        Nsv   = length(param.add_surf_from_dem.theta_vec);
+        Nsv   = length(param.add_surf_from_dem.theta_bins);
         twtt  = zeros(Nsv,Nx);
         ice_mask = NaN(Nsv,Nx);
         
@@ -1436,6 +1472,7 @@ classdef surfdata < handle
         DEM_coverage_warning = false;
         
         for rline = 1:Nx
+%         for rline = 1:1
           if ~mod(rline-1,10^floor(log10(Nx)-1))
             fprintf('  %s %d of %d (%s)\n', mfilename, rline, Nx, datestr(now));
           end
@@ -1502,7 +1539,7 @@ classdef surfdata < handle
             
             orig = [0 0 0];
             
-            theta_rline = param.add_surf_from_dem.theta_vec*(pi/180);
+            theta_rline = param.add_surf_from_dem.theta_bins*(pi/180);
             
             intersection = zeros(3,Nsv);
             
@@ -1516,7 +1553,8 @@ classdef surfdata < handle
                 twtt(theta_idx,rline) = NaN;
                 intersection(:,theta_idx) = NaN;
               else
-                twtt(theta_idx,rline) = t(intersect_idx(1))/(3e8/2);
+%                 twtt(theta_idx,rline) = t(intersect_idx(1))/(3e8/2);
+                twtt(theta_idx,rline) = t(intersect_idx(1))/(c/2);
                 intersection(:,theta_idx) = mean([vert1(intersect_idx(1),:);vert2(intersect_idx(1),:);vert3(intersect_idx(1),:)],1);
               end
               
@@ -1589,24 +1627,21 @@ classdef surfdata < handle
         %% add_surf_from_dem: Insert Surfaces
         
         % Insert TWTT of top surface
-        surf = tomo.surfdata.empty_surf();
-        surf.x = repmat((1:Nsv).',[1 size(twtt,2)]); % Nsv x Nx
+        sd.surf(1).name = 'top twtt';
+        sd.surf(1).x = zeros(Nsv,length(sd.gps_time));
+        sd.surf(1).y = zeros(Nsv,length(sd.gps_time));
+        sd.surf(1).x = repmat(param.add_surf_from_dem.theta_bins,[1 size(twtt,2)]); % Nsv x Nx
+        sd.surf(1).y = twtt;
         
-        surf.y = twtt;
-        surf.plot_name_values = {'color','black','marker','x'};
-        surf.name = 'top twtt';
-        sd.insert_surf(surf);
-        
-        % Insert icemask
-        surf = tomo.surfdata.empty_surf();
-        surf.x = repmat((1:Nsv).',[1 size(twtt,2)]); % Nsv x Nx
-        surf.y = ice_mask;
-        surf.plot_name_values = {'color','white','marker','x'};
-        surf.name = 'ice_mask';
-        sd.insert_surf(surf);
+        sd.surf(2).name = 'ice mask';
+        sd.surf(2).x = zeros(Nsv,length(sd.gps_time));
+        sd.surf(2).y = zeros(Nsv,length(sd.gps_time));
+        sd.surf(2).x= repmat(param.add_surf_from_dem.theta_bins,[1 size(twtt,2)]); % Nsv x Nx
+        sd.surf(2).y = ice_mask;
+        sd.surf(2).plot_name_values = {'color','white','marker','x'};
         
         %% add_surf_from_dem: Save output
-        out_fn_dir = ct_filename_out(param,param.add_surf_from_dem.surf_out_path,'surfData_sar');
+        out_fn_dir = ct_filename_out(param,param.add_surf_from_dem.surf_out_path);
         if ~isdir(out_fn_dir)
           mkdir(out_fn_dir);
         end
@@ -1634,8 +1669,10 @@ classdef surfdata < handle
       param_override = [];
       params = read_param_xls(ct_filename_param('rds_param_2014_Greenland_P3.xls'));
       params = ct_set_params(params,'cmd.generic',0);
-      params = ct_set_params(params,'cmd.generic',1,'day_seg','20140506_01');
-      params = ct_set_params(params,'cmd.frms',[2 3 4]);
+%       params = ct_set_params(params,'cmd.generic',1,'day_seg','20140401_03');
+%       params = ct_set_params(params,'cmd.frms',[29:34]);
+      params = ct_set_params(params,'cmd.generic',1,'day_seg','20140325_07');
+      params = ct_set_params(params,'cmd.frms',[2]);
       %       params = ct_set_params(params,'add_surf_from_dem.ice_mask_fn',fullfile('greenland','IceMask','GimpIceMask_90m_v1.1.tif'));%'antarctica\DEM\BEDMAP2\original_data\bedmap2_tiff\bedmap2_icemask_grounded_and_shelves.tif';
       params = ct_set_params(params,'add_surf_from_dem.ice_mask_fn','canada/ice_mask/03_rgi50_ArcticCanadaNorth/03_rgi50_ArcticCanadaNorth.mat');%'antarctica\DEM\BEDMAP2\original_data\bedmap2_tiff\bedmap2_icemask_grounded_and_shelves.tif';
       %       params = ct_set_params(params,'add_surf_from_dem.ice_mask_fn',ct_filename_gis(params,fullfile('greenland','IceMask','GimpIceMask_90m_v1.1.tif')));%'antarctica\DEM\BEDMAP2\original_data\bedmap2_tiff\bedmap2_icemask_grounded_and_shelves.tif';
@@ -1643,7 +1680,14 @@ classdef surfdata < handle
       %         param.add_surf_from_dem.ice_mask_fn = ct_filename_gis([],'canada/ice_mask/03_rgi50_ArcticCanadaNorth/03_rgi50_ArcticCanadaNorth.mat');
       
       params = ct_set_params(params, 'add_surf_from_dem.dem_guard', 30e3);
+      params = ct_set_params(params, 'add_surf_from_dem.delta_at',10);
       %       params = ct_set_params(params, 'add_surf_from_dem.dem_per_slice_guard', 500e3);
+%       params = ct_set_params(params, 'add_surf_from_dem.surf_out_path', 'surfData_test');
+
+
+      param_override.add_surf_from_dem.in_path = 'sar_air';
+%       param_override.update.output = 'surf_sar';
+%       param_override.update.echogram = 'standard_air';
       
       % Automated Section
       % =========================================================================

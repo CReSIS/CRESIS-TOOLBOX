@@ -97,10 +97,12 @@ params = ct_set_params(params,['cmd.' cmd_method],0);
 % params = ct_set_params(params,['cmd.' cmd_method],1,'day_seg','20140325_06');
 % params = ct_set_params(params,['cmd.' cmd_method],1,'day_seg','20140325_07');
 % params = ct_set_params(params,'cmd.frms',[4 5],'day_seg','20140325_07');
-% params = ct_set_params(params,['cmd.' cmd_method],1,'day_seg','20140401_03');
-% params = ct_set_params(params,'cmd.frms',[1 2],'day_seg','20140401_03');
+params = ct_set_params(params,['cmd.' cmd_method],1,'day_seg','20140401_03');
+params = ct_set_params(params,'cmd.frms',[1:5],'day_seg','20140401_03');
 % params = ct_set_params(params,['cmd.' cmd_method],1,'day_seg','20140506_01');
-% params = ct_set_params(params,'cmd.frms',[3:4],'day_seg','20140506_01');
+% params = ct_set_params(params,'cmd.frms',[3 4],'day_seg','20140506_01');
+% params = ct_set_params(params,['cmd.' cmd_method],1,'day_seg','20140506_01');
+% params = ct_set_params(params,'cmd.frms',[3 4],'day_seg','20140506_01');
 % -------------------------------------------------------------------------
 % Multipass Camp Century
 % params = ct_set_params(params,['cmd.' cmd_method],1,'day_seg','20140429_01');
@@ -151,7 +153,7 @@ params = ct_set_params(params,['cmd.' cmd_method],0);
 % -------------------------------------------------------------------------
 % params = ct_set_params(params,['cmd.' cmd_method],1,'day_seg','20181224_03');
 % params = ct_set_params(params,['cmd.' cmd_method],1,'day_seg','20181224_02');
-params = ct_set_params(params,['cmd.' cmd_method],1,'day_seg','20181224_03');
+% params = ct_set_params(params,['cmd.' cmd_method],1,'day_seg','20181224_03');
 % params = ct_set_params(params,['cmd.' cmd_method],1,'day_seg','20181224_04');
 % params = ct_set_params(params,['cmd.' cmd_method],1,'day_seg','20181217');
 % params = ct_set_params(params,['cmd.' cmd_method],1,'day_seg','20181219');
@@ -952,7 +954,7 @@ if isfield(param_override,'array') && isfield(param_override.array,'out_path')
       else
         keyboard
       end
-    elseif 1
+    elseif 0
       % GEONULL
       params = ct_set_params(params,'array.tomo_en',true);
       params = ct_set_params(params,'array.method','geonull_cal');
@@ -991,13 +993,13 @@ if isfield(param_override,'array') && isfield(param_override.array,'out_path')
       params = ct_set_params(params,'array.bin_rng',[0]);
       params = ct_set_params(params,'array.line_rng',[-5:5]);
       params = ct_set_params(params,'array.Nsrc',1);
-    elseif 1
+    elseif ~isempty(regexp(param_override.array.out_path,'snapshot'))
       % SNAPSHOT
       params = ct_set_params(params,'array.tomo_en',true);
       params = ct_set_params(params,'array.in_path','sar_air');
-      params = ct_set_params(params,'array.out_path','snapshot');
+%       params = ct_set_params(params,'array.out_path','snapshot');
       params = ct_set_params(params,'array.method','snapshot');
-      params = ct_set_params(params,'array.surf_layer.source','surfData');
+      params = ct_set_params(params,'array.surf_layer.source','surf_sar');
       params = ct_set_params(params,'array.surf_layer.name','top twtt');
       if strcmpi(params(param_idx).season_name,'2018_Greenland_P3')
         params = ct_set_params(params,'array.imgs',{[ones(1,15); [1:4,6:16]].', [2*ones(1,15); [1:4,6:16]].', [3*ones(1,15); [1:4,6:16]].'});

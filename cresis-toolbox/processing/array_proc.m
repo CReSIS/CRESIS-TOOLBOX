@@ -309,6 +309,7 @@ if ischar(param.array.method)
     param.array.bin_rng   = 0;
     param.array.line_rng  = 0;
     param.array.Nsrc      = 1;
+    param.array.array_proc.lut = [];
   end
   param.array.method = method_integer;
 end
@@ -419,7 +420,7 @@ else
   if ~isfield(param.array,'Nsv') || isempty(param.array.Nsv)
     param.array.Nsv = 1;
   end
-  theta = fftshift(param.array.sv_fh(param.array.Nsv, 1));
+  theta = fftshift(param.array.sv_fh(1,[],[],param.array.Nsv, [],[]));
 end
 
 % .Nsubband:
@@ -481,6 +482,22 @@ end
 
 if ~isfield(param.array,'layer_name') || isempty(param.array.layer_name)
   param.array.layer_name = '';
+end
+
+if ~isfield(param.array,'sv_model') || isempty(param.array.sv_model)
+  param.array.sv_model = 'ideal'; % 'ideal' or 'lookup_table'
+end
+
+if ~strcmpi(param.array.sv_model,'ideal') && isempty(param.array.sv_lut_path) 
+  param.array.sv_lut_path = [];
+end
+
+if ~isfield(param.array,'sv_lut_path')
+  param.array.sv_lut_path = [];
+end
+
+if strcmpi(param.array.sv_model,'lookup_table') && ~isfield(param.array,'sv_lut_path') || isempty(param.array.sv_lut_path)
+  param.array.sv_lut_path = 'analysis';  
 end
 
 if nargin == 1
@@ -728,6 +745,7 @@ if any(cfg.method >= DOA_METHOD_THRESHOLD)
   doa_param.theta           = theta; % This changes inside S-MAP loop
   theta_copy                = theta;
   doa_param.seq             = cfg.doa_seq;
+  doa_param.lut             = cfg.lut;
   % Setup cfgeterization for DCM
   if cfg.method == DCM_METHOD
     doa_param.h               = cfg.imp_resp.vals(:);
@@ -756,8 +774,11 @@ end
 % sv_fh_arg1
 % -------------------------------------------------------------------------
 % First argument to sv_fh
-sv_fh_arg1 = {'theta'};
-sv_fh_arg1{2} = theta;
+% sv_fh_arg1 = {'theta'};
+% sv_fh_arg1{2} = theta;
+sv_fh_arg1.theta = theta;
+sv_arg_opt.theta = theta;
+
 
 % Set the output of any ignored image to NaN
 % -------------------------------------------------------------------------
@@ -810,14 +831,32 @@ end
 last_fprintf_time = -inf;
 last_fprintf_time_bin = -inf;
 
-if any(cfg.method == GEONULL_METHOD)
-  % HACK
-  LUT = load('/cresis/snfs1/dataproducts/ct_data/rds/2014_Greenland_P3/sv_LUT.mat');
-  LUT.bins = LUT.bins.'/180*pi;
-  LUT.sv = (sqrt(LUT.power_SVmean) .* exp(1i*LUT.angle_SVmean)).';
-  LUT.sv_real = real(LUT.sv);
-  LUT.sv_imag = imag(LUT.sv);
-end
+% If the steering vector model is specified as a lookup table, then load
+% if strcmpi(cfg.sv_model,'lookup_table')
+%   
+%   % Future paths after updated estimate_sv_lut (leaves off dayseg folder)
+% %   lut_folder = ct_filename_out(param,cfg.sv_lut_path,[],1);
+% %   lut_fn = fullfile(lut_folder,'sv_lut.mat');
+% 
+%   lut_folder = ct_filename_out(param,cfg.sv_lut_path);
+%   lut_fn = fullfile(lut_folder, sprintf('sv_lut_%s.mat',param.day_seg));
+%   load(lut_fn,'sv_rel_mag','sv_rel_phase','doa_bins');
+%   cfg.lut.bins = doa_bins.'/180*pi;
+%   cfg.lut.sv = ((sv_rel_mag) .* exp(1i*sv_rel_phase)).';
+%   cfg.lut.sv_real = real(cfg.lut.sv);
+%   cfg.lut.sv_imag = imag(cfg.lut.sv);
+% else
+%   cfg.lut = [];
+% end
+
+% if any(cfg.method == GEONULL_METHOD)
+%   % HACK
+%   LUT = load('/cresis/snfs1/dataproducts/ct_data/rds/2014_Greenland_P3/sv_LUT.mat');
+%   LUT.bins = LUT.bins.'/180*pi;
+%   LUT.sv = (sqrt(LUT.power_SVmean) .* exp(1i*LUT.angle_SVmean)).';
+%   LUT.sv_real = real(LUT.sv);
+%   LUT.sv_imag = imag(LUT.sv);
+% end
 
 for line_idx = 1:1:Nx_out
   %% Array: Setup
@@ -872,8 +911,18 @@ for line_idx = 1:1:Nx_out
       y_pos{ml_idx}(wf_adc_idx,1) = cfg.fcs{ml_idx}{wf_adc_idx}.pos(2,rline);
       z_pos{ml_idx}(wf_adc_idx,1) = cfg.fcs{ml_idx}{wf_adc_idx}.pos(3,rline);
     end
+    
+    sv_arg_opt = [];
+    sv_arg_opt.theta = theta;
+    
+    % Arguments for array_proc_sv
+    sv_arg = [];
+    sv_arg = {cfg.wfs.fc.*sqrt(cfg.sv_dielectric), y_pos{ml_idx}, z_pos{ml_idx},sv_arg_opt, cfg.lut, cfg.fcs{1}{1}.roll(rline)};
+    
     % Determine Steering Vector
-    [~,sv{ml_idx}] = cfg.sv_fh(sv_fh_arg1,cfg.wfs.fc*sqrt(cfg.sv_dielectric),y_pos{ml_idx},z_pos{ml_idx});
+    [~,sv{ml_idx}] = cfg.sv_fh(sv_arg{:});    
+   
+%     [~,sv{ml_idx}] = cfg.sv_fh(sv_fh_arg1,cfg.wfs.fc*sqrt(cfg.sv_dielectric),y_pos{ml_idx},z_pos{ml_idx});
   end
   
   if 0
@@ -898,7 +947,13 @@ for line_idx = 1:1:Nx_out
   if 0
     % Debug: Plot steering vector correlation matrix
     ml_idx = 1;
-    [theta_plot,sv{ml_idx}] = cfg.sv_fh(cfg.Nsv,cfg.fc*sqrt(cfg.sv_dielectric),y_pos{ml_idx},z_pos{ml_idx});
+    sv_arg_opt = [];
+    sv_arg_opt = cfg.Nsv;
+    sv_arg = [];
+    sv_arg = {cfg.wfs.fc.*sqrt(cfg.sv_dielectric), y_pos{ml_idx}, z_pos{ml_idx}, sv_arg_opt, cfg.lut, cfg.fcs{1}{1}.roll(rline)};
+    [theta_plot,sv{ml_idx}] = cfg.sv_fh(sv_arg{:});
+    
+%     [theta_plot,sv{ml_idx}] = cfg.sv_fh(cfg.Nsv,cfg.fc*sqrt(cfg.sv_dielectric),y_pos{ml_idx},z_pos{ml_idx});
     
     sv_table = fftshift(sv{ml_idx}.',1);
     theta_plot = fftshift(theta_plot);
@@ -931,6 +986,7 @@ for line_idx = 1:1:Nx_out
     doa_param.y_pc  = y_pos{1};
     doa_param.z_pc  = z_pos{1};
     doa_param.SV    = fftshift(sv{1},2);
+    doa_param.lut_roll = cfg.fcs{1}{1}.roll(rline);
   end
   
   %  .range: Range vector. It may have negative values. So, better to ignore
@@ -964,7 +1020,7 @@ for line_idx = 1:1:Nx_out
   
   % Interpolate twtt-dependant DOAs from the surfData onto the radar twtt
   % -----------------------------------------------------------------------
-  if isfield(cfg,'surf_layer') && strcmpi(cfg.surf_layer.source, 'surfData') && strcmpi(cfg.surf_layer.name,'top twtt')
+  if isfield(cfg,'surf_layer') && strcmpi(cfg.surf_layer.source, 'surf_sar') && strcmpi(cfg.surf_layer.name,'top twtt')
     
     % TWTT of radar
     radar_twtt = cfg.wfs.time;
@@ -1065,7 +1121,7 @@ for line_idx = 1:1:Nx_out
         surf_ice_mask(rbin_idx,1:length(bin_ice_mask)) = bin_ice_mask;
         
         if cfg.debug_plots
-          plot(bin_theta,y0,'mp','MarkerSize',4,'MarkerFaceColor','g','LineWidth',2)
+          plot(bin_theta,y0,'mo','MarkerSize',4,'MarkerFaceColor','g','LineWidth',2)
         end
       end     
     end
@@ -1311,6 +1367,7 @@ for line_idx = 1:1:Nx_out
       
       
     elseif any(cfg.method == GEONULL_METHOD)
+      warning off
       %% Array: GEONULL
       % The geonull method is a non-adaptive beamformer that  steers nulls
       % towards predicted clutter angles from the air-ice interfaces
@@ -1340,8 +1397,8 @@ for line_idx = 1:1:Nx_out
         g   = vertcat(1,zeros(size(keep_surf_doas)));
         
         surf_doas_rad = keep_surf_doas*pi/180;
-        sv_fh_arg_geonull = {'theta'};
-        sv_fh_arg_geonull{2} = [theta_desired(des_idx), surf_doas_rad(:)']; % array_proc_sv breaks if this is a column vector -- fix this!
+%         sv_fh_arg_geonull = {'theta'};
+%         sv_fh_arg_geonull{2} = [theta_desired(des_idx), surf_doas_rad(:)']; % array_proc_sv breaks if this is a column vector -- fix this!
         
         for ml_idx = 1:length(cfg.fcs)
           % Make column vectors of y and z-positions
@@ -1349,18 +1406,25 @@ for line_idx = 1:1:Nx_out
             y_pos{ml_idx}(wf_adc_idx,1) = cfg.fcs{ml_idx}{wf_adc_idx}.pos(2,rline);
             z_pos{ml_idx}(wf_adc_idx,1) = cfg.fcs{ml_idx}{wf_adc_idx}.pos(3,rline);
           end
+          
           % Determine Steering Vectors for target and interference
-          %[~,A] = cfg.sv_fh(sv_fh_arg_geonull,cfg.wfs.fc,y_pos{ml_idx},z_pos{ml_idx});
-          
-          roll = cfg.fcs{1}{1}.roll(rline);
-
-          [~,A] = cfg.sv_fh(sv_fh_arg_geonull, cfg.wfs.fc*sqrt(cfg.sv_dielectric), y_pos{ml_idx}, z_pos{ml_idx}, roll, LUT, []);
-          
+          sv_opt_arg = [];
+          sv_opt_arg.theta =  [theta_desired(des_idx), surf_doas_rad(:)'];
+          sv_arg = [];
+          sv_arg = {cfg.wfs.fc*sqrt(cfg.sv_dielectric), y_pos{ml_idx}, z_pos{ml_idx}, sv_opt_arg, cfg.lut, cfg.fcs{1}{1}.roll(rline)};
+          [~,A] = cfg.sv_fh(sv_arg{:});
+%           [~,A] = cfg.sv_fh(cfg.wfs.fc*sqrt(cfg.sv_dielectric), y_pos{ml_idx}, z_pos{ml_idx}, sv_opt_arg, cfg.lut, cfg.fcs{1}{1}.roll(rline));
+%           [~,A] = cfg.sv_fh(sv_fh_arg_geonull,cfg.wfs.fc,y_pos{ml_idx},z_pos{ml_idx});
+%           roll = cfg.fcs{1}{1}.roll(rline);
+       
           % DEBUG ONLY bin 501-502, line 1308
           if 0
-            sv_fh_arg_geonull = {'theta'};
-            sv_fh_arg_geonull{2} = [theta_desired(des_idx)]; % array_proc_sv breaks if this is a column vector -- fix this!
-            [~,Atarget] = cfg.sv_fh(sv_fh_arg_geonull,cfg.wfs.fc*sqrt(cfg.sv_dielectric),y_pos{ml_idx},z_pos{ml_idx});
+            sv_opt_arg = [];
+            sv_opt_arg.theta = [theta_desired(des_idx)];
+            sv_arg = [];
+            sv_arg = {cfg.wfs.fc*sqrt(cfg.sv_dielectric), y_pos{ml_idx}, z_pos{ml_idx}, sv_opt_arg, cfg.lut, cfg.fcs{1}{1}.roll(rline)};
+            [~,Atarget] = cfg.sv_fh(sv_arg{:});
+            
             Atarget = Atarget ./ sqrt(Atarget'*Atarget);
             Aint = [0.3075 + 0.0000i, -0.3686 + 0.0469i, 0.4972 - 0.1680i, -0.4738 - 0.1331i, 0.2880 + 0.2123i, -0.2115 - 0.1632i, 0.0480 + 0.2192i];
 %             Aint =  [0.2090 + 0.0000i, -0.2008 + 0.2626i, -0.2076 - 0.3079i, 0.4031 - 0.1203i, -0.0308 + 0.4104i, -0.3837 - 0.1338i, 0.3912 - 0.2112i];
@@ -1405,28 +1469,87 @@ for line_idx = 1:1:Nx_out
 %       end
       
       if cfg.debug_plots
-        theta_vec       = linspace(-pi/2,pi/2,256);
-        sv_patt_arg     = sv_fh_arg_geonull;
-        sv_patt_arg{2}  = [theta_vec];
-        [~,Amanifold]   = cfg.sv_fh(sv_patt_arg,cfg.wfs.fc*sqrt(cfg.sv_dielectric),y_pos{ml_idx},z_pos{ml_idx});
-        Pattmle         = w'*Amanifold;
+        % Plot Geonull beamformer, normalized periodogram and normalize
+        % Music pseudospectrum
         
-        figure(97);clf;plot(theta_vec*180/pi,20*log10(abs(Pattmle)),'LineWidth',2)
+        % Matrix of steering vectors
+        theta_vec       = linspace(-pi/2,pi/2,256);
+        sv_opt_arg = [];
+        sv_opt_arg.theta = [theta_vec];
+        sv_arg = [];
+        sv_arg = {cfg.wfs.fc*sqrt(cfg.sv_dielectric), y_pos{1}, z_pos{1}, sv_opt_arg, cfg.lut, cfg.fcs{1}{1}.roll(rline)};
+        [~,SV_lut]   = cfg.sv_fh(sv_arg{:});
+        
+        sv_arg = [];
+        sv_arg = {cfg.wfs.fc*sqrt(cfg.sv_dielectric), y_pos{1}, z_pos{1}, sv_opt_arg, [], []};
+        [~,SV_nom] = cfg.sv_fh(sv_arg{:});
+        
+        % Geonull beamformer        
+        Wgeo_lut = w'*SV_lut;
+        Wgeo_nom = w'*SV_nom;
+        
+        % Normalized periodogram
+        Sp_lut = (1/size(dataSample,1))*abs(sum(conj(dataSample)*SV_lut,1)).^2;
+        Sp_lut = Sp_lut./max(abs(Sp_lut));
+        
+        Sp_nom = (1/size(dataSample,1))*abs(sum(conj(dataSample)*SV_nom,1)).^2;
+        Sp_nom = Sp_nom./max(abs(Sp_nom));
+        
+        % Music pseudospectrum
+        Rxx = 1/size(dataSample,1) * (dataSample' * dataSample);
+        [V,D] = eig(Rxx);
+        eigenVals = diag(D);
+        [eigenVals noiseIdxs] = sort(eigenVals);   
+        Nsrc = length(g);
+        noiseIdxs = noiseIdxs(1:end-Nsrc);
+        
+        Sm_lut = mean(abs(SV_lut(:,:).'*V(:,noiseIdxs)).^2,2);
+        Sm_lut = Sm_lut ./ max(abs(Sm_lut));
+        
+        Sm_nom = mean(abs(SV_nom(:,:).'*V(:,noiseIdxs)).^2,2);
+        Sm_nom = Sm_nom ./ max(abs(Sm_nom));
+        
+        colorvec = hsv(7);
+        figure(97);clf;
+        plot(theta_vec*180/pi,20*log10(abs(Wgeo_lut)),'LineWidth',2,'Color',colorvec(1,:))
         hold on
         grid on
         grid minor
         axis tight
+        plot(theta_vec*180/pi,10*log10(abs(Sp_lut)),'LineWidth',2,'Color',colorvec(2,:))
+        plot(theta_vec*180/pi,10*log10(abs(Sm_lut)),'LineWidth',2,'Color',colorvec(3,:))
         [day, rem] = strtok(param.day_seg, '_');
         seg = rem(2:end);
         tgps = datetime(1970,01,01,00,00,00,00) + seconds(cfg.fcs{1}{1}.gps_time(rline));
-        titlestr = sprintf('%s %s GEONULL PATTERN, %s',day,seg,datestr(tgps));
+        titlestr = sprintf('%s %s Measured Manifold, %s',day,seg,datestr(tgps));
         title(titlestr)
         ylims = ylim;
         if ~isempty(surf_doas)
           DOAclutter = surf_doas;
           line([DOAclutter(1) DOAclutter(1)],[min(ylims) max(ylims)],'LineStyle','--','Color',[0.3 0.3 0.3])
           line([DOAclutter(2) DOAclutter(2)],[min(ylims) max(ylims)],'LineStyle','--','Color',[0.3 0.3 0.3])
-          legend('Geonull','Clutter','Clutter')
+          legend('Geonull Beamformer','Normalized Periodogram','Normalized MUSIC','Clutter','Clutter','Location','SouthWest')
+        end
+        
+        figure(98);clf;
+        plot(theta_vec*180/pi,20*log10(abs(Wgeo_nom)),'LineWidth',2,'Color',colorvec(1,:))
+        hold on
+        grid on
+        grid minor
+        axis tight
+        plot(theta_vec*180/pi,10*log10(abs(Sp_nom)),'LineWidth',2,'Color',colorvec(2,:))
+        plot(theta_vec*180/pi,10*log10(abs(Sm_nom)),'LineWidth',2,'Color',colorvec(3,:))
+        [day, rem] = strtok(param.day_seg, '_');
+        seg = rem(2:end);
+        tgps = datetime(1970,01,01,00,00,00,00) + seconds(cfg.fcs{1}{1}.gps_time(rline));
+        titlestr = sprintf('%s %s Nominal Manifold, %s',day,seg,datestr(tgps));
+        title(titlestr)
+        ylims = ylim;
+        if ~isempty(surf_doas)
+          DOAclutter = surf_doas;
+          line([DOAclutter(1) DOAclutter(1)],[min(ylims) max(ylims)],'LineStyle','--','Color',[0.3 0.3 0.3])
+          line([DOAclutter(2) DOAclutter(2)],[min(ylims) max(ylims)],'LineStyle','--','Color',[0.3 0.3 0.3])
+          legend('Geonull Beamformer','Normalized Periodogram','Normalized MUSIC','Clutter','Clutter','Location','SouthWest')
         end
         keyboard
       end
@@ -1463,8 +1586,10 @@ for line_idx = 1:1:Nx_out
         dim_Aperp = Nc - Nsrc;
         
         surf_doas_rad = keep_surf_doas*pi/180;
-        sv_fh_arg_gslc = {'theta'};
-        sv_fh_arg_gslc{2} = [theta_desired(des_idx), surf_doas_rad(:)']; % array_proc_sv breaks if this is a column vector -- fix this!
+%         sv_fh_arg_gslc = {'theta'};
+%         sv_fh_arg_gslc{2} = [theta_desired(des_idx), surf_doas_rad(:)']; % array_proc_sv breaks if this is a column vector -- fix this!
+        sv_opt_arg = [];
+        sv_opt_arg.theta = [theta_desired(des_idx), surf_doas_rad(:)'];
         
         for ml_idx = 1:length(cfg.fcs)
           % Make column vectors of y and z-positions
@@ -1472,8 +1597,11 @@ for line_idx = 1:1:Nx_out
             y_pos{ml_idx}(wf_adc_idx,1) = cfg.fcs{ml_idx}{wf_adc_idx}.pos(2,rline);
             z_pos{ml_idx}(wf_adc_idx,1) = cfg.fcs{ml_idx}{wf_adc_idx}.pos(3,rline);
           end
+          
           % Determine Steering Vectors for target and interference
-          [~,A] = cfg.sv_fh(sv_fh_arg_gslc,cfg.wfs.fc*sqrt(cfg.sv_dielectric),y_pos{ml_idx},z_pos{ml_idx});
+          sv_arg = [];
+          sv_arg = {cfg.wfs.fc*sqrt(cfg.sv_dielectric), y_pos{ml_idx}, z_pos{ml_idx}, sv_opt_arg, cfg.lut, cfg.fcs{1}{1}.roll(rline)};
+          [~,A] = cfg.sv_fh(sv_arg{:});
           % Find orthonormal basis for the orthogonal complement of C(A)
           % (nullspace of A transpose)
           Ca  = zeros(Nc,dim_Aperp);
@@ -1517,17 +1645,27 @@ for line_idx = 1:1:Nx_out
           g_geo                 = vertcat(1,zeros(Nsrc-1,1));  % Unity gain towards nadir, nulls in clutter directions
           sv_fh_arg_geonull     = {'theta'};
           sv_fh_arg_geonull{2}  = [theta, surf_doas_rad(:)']; % array_proc_sv breaks if this is a column vector -- fix this!
+          sv_opt_arg = [];
+          sv_opt_arg.theta = [theta, surf_doas_rad(:)']; % array_proc_sv breaks if this is a column vector -- fix this!
           
           % Determine Steering Vectors for target and interference
-          [~,Aint] = cfg.sv_fh(sv_fh_arg_geonull,cfg.wfs.fc*sqrt(cfg.sv_dielectric),y_pos{ml_idx},z_pos{ml_idx});
+          sv_arg = [];
+          sv_arg = {cfg.wfs.fc*sqrt(cfg.sv_dielectric), y_pos{ml_idx}, z_pos{ml_idx}, sv_opt_arg, cfg.lut, cfg.fcs{1}{1}.roll(rline)};
+          [~,Aint] = cfg.sv_fh(sv_arg{:});
+%           [~,Aint] = cfg.sv_fh(sv_fh_arg_geonull,cfg.wfs.fc*sqrt(cfg.sv_dielectric),y_pos{ml_idx},z_pos{ml_idx});
           
           % Apply pseudoinverse to g (project orthogonally to interference)
           wgeo = Aint * inv(Aint'*Aint) *g_geo;
         
           theta_vec       = linspace(-pi/2,pi/2,256);
-          sv_patt_arg     = sv_fh_arg_gslc;
-          sv_patt_arg{2}  = [theta_vec];
-          [~,Amanifold]   = cfg.sv_fh(sv_patt_arg,cfg.wfs.fc*sqrt(cfg.sv_dielectric),y_pos{ml_idx},z_pos{ml_idx});
+%           sv_patt_arg     = sv_fh_arg_gslc;
+%           sv_patt_arg{2}  = [theta_vec];
+          sv_opt_arg = [];
+          sv_opt_arg.theta = [theta_vec];
+          sv_arg = [];
+          sv_arg = {cfg.wfs.fc*sqrt(cfg.sv_dielectric), y_pos{ml_idx}, z_pos{ml_idx}, sv_opt_arg, cfg.lut, cfg.fcs{1}{1}.roll(rline)};
+          [~,Amanifold]   = cfg.sv_fh(sv_arg{:});
+%           [~,Amanifold]   = cfg.sv_fh(sv_patt_arg,cfg.wfs.fc*sqrt(cfg.sv_dielectric),y_pos{ml_idx},z_pos{ml_idx});
           
           % Constituent patterns of the sidelobe canceller
           Pattgslc          = w_gslc'*Amanifold;
@@ -1673,6 +1811,7 @@ for line_idx = 1:1:Nx_out
       doa_param.theta_guard     = cfg.doa_theta_guard/180*pi;
       doa_param.search_type     = cfg.doa_init;
       doa_param.options         = optimoptions(@fmincon,'Display','off','Algorithm','sqp','TolX',1e-3);
+      doa_param.lut_roll        = cfg.fcs{1}{1}.roll(rline);
       
       for src_idx = 1:cfg.Nsrc
         doa_param.src_limits{src_idx} = doa_param.doa_constraints(src_idx).init_src_limits/180*pi;
@@ -1699,7 +1838,12 @@ for line_idx = 1:1:Nx_out
       % Apply pseudoinverse and estimate power for each source
       Nsv2{1} = 'theta';
       Nsv2{2} = doa(:)';
-      [~,A] = cfg.sv_fh(Nsv2,doa_param.fc,doa_param.y_pc,doa_param.z_pc);
+      sv_opt_arg = [];
+      sv_opt_arg.theta = doa(:);
+      sv_arg = [];
+      sv_arg = {cfg.wfs.fc*sqrt(cfg.sv_dielectric), y_pos{ml_idx}, z_pos{ml_idx}, sv_opt_arg, cfg.lut, cfg.fcs{1}{1}.roll(rline)};
+      [~,A] = cfg.sv_fh(sv_arg{:});
+%       [~,A] = cfg.sv_fh(Nsv2,doa_param.fc,doa_param.y_pc,doa_param.z_pc);
       Weights = (A'*A)\A';
       S_hat   = Weights*dataSample.';
       P_hat   = mean(abs(S_hat).^2,2);
@@ -2601,7 +2745,12 @@ for line_idx = 1:1:Nx_out
         % Apply pseudoinverse and estimate power for each source
         Nsv2{1} = 'theta';
         Nsv2{2} = doa(:)';
-        [~,A] = cfg.sv_fh(Nsv2,doa_param.fc*sqrt(cfg.sv_dielectric),doa_param.y_pc,doa_param.z_pc);
+        sv_opt_arg = [];
+        sv_opt_arg.theta = doa(:);
+        sv_arg = [];
+        sv_arg = {cfg.wfs.fc*sqrt(cfg.sv_dielectric), y_pos{ml_idx}, z_pos{ml_idx}, sv_opt_arg, cfg.lut, cfg.fcs{1}{1}.roll(rline)};
+        [~,A] = cfg.sv_fh(sv_arg{:});
+%         [~,A] = cfg.sv_fh(Nsv2,doa_param.fc*sqrt(cfg.sv_dielectric),doa_param.y_pc,doa_param.z_pc);
         %           k       = 4*pi*doa_param.fc/c;
         %           A       = sqrt(1/length(doa_param.y_pc))*exp(1i*k*(doa_param.y_pc*sin(doa(:)).' - doa_param.z_pc*cos(doa(:)).'));
         Weights = (A'*A)\A';
@@ -3153,8 +3302,10 @@ for line_idx = 1:1:Nx_out
           g   = vertcat(1,zeros(size(keep_surf_doas)));
           % Convert to radians for array_proc_sv
           surf_doas_rad = keep_surf_doas*pi/180;
-          sv_fh_arg = {'theta'};
-          sv_fh_arg{2} = [theta_desired(des_idx), surf_doas_rad(:)']; % array_proc_sv breaks if this is a column vector -- fix this!
+%           sv_fh_arg = {'theta'};
+%           sv_fh_arg{2} = [theta_desired(des_idx), surf_doas_rad(:)']; % array_proc_sv breaks if this is a column vector -- fix this!
+          sv_opt_arg = [];
+          sv_opt_arg = [theta_desired(des_idx), surf_doas_rad(:)']; % array_proc_sv breaks if this is a column vector -- fix this!
           
           % Estimate power
           for ml_idx = 1:length(cfg.fcs)
@@ -3164,7 +3315,10 @@ for line_idx = 1:1:Nx_out
               z_pos{ml_idx}(wf_adc_idx,1) = cfg.fcs{ml_idx}{wf_adc_idx}.pos(3,rline);
             end
             % Determine Steering Vectors for target and interference
-            [~,A] = cfg.sv_fh(sv_fh_arg,cfg.wfs.fc*sqrt(cfg.sv_dielectric),y_pos{ml_idx},z_pos{ml_idx});
+            sv_arg = [];
+            sv_arg = {cfg.wfs.fc*sqrt(cfg.sv_dielectric), y_pos{ml_idx}, z_pos{ml_idx}, sv_opt_arg, cfg.lut, cfg.fcs{1}{1}.roll(rline)};
+            [~,A] = cfg.sv_fh(sv_arg{:});
+%             [~,A] = cfg.sv_fh(sv_fh_arg,cfg.wfs.fc*sqrt(cfg.sv_dielectric),y_pos{ml_idx},z_pos{ml_idx});
             % Apply pseudoinverse to g
             w = A * inv(A'*A) *g;
             w = w ./ sqrt(w'*w);

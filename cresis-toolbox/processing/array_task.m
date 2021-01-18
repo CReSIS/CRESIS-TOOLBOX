@@ -38,14 +38,23 @@ frames = frames_load(param);
 tmp_param = param;
 tmp_param.cmd.frms = max(1,param.load.frm-1) : min(length(frames.frame_idxs),param.load.frm+1);
 
-if strcmpi(param.array.surf_layer.source, 'surfData')
-  surf_dir = ct_filename_out(param,'','surfData_sar');
+if strcmpi(param.array.surf_layer.source, 'surf_sar')
+  surf_dir = ct_filename_out(param,'','surf_sar');
   fn_name = sprintf('Data_%s_%03.0f.mat',param.day_seg,param.load.frm);
   fn = fullfile(surf_dir,fn_name);
   surf_layer = tomo.surfdata(fn,param);
 else
   surf_layer = opsLoadLayers(tmp_param,param.array.surf_layer);
 end
+%
+% if strcmpi(param.array.surf_layer.source, 'surfData')
+%   surf_dir = ct_filename_out(param,'','surfData_sar');
+%   fn_name = sprintf('Data_%s_%03.0f.mat',param.day_seg,param.load.frm);
+%   fn = fullfile(surf_dir,fn_name);
+%   surf_layer = tomo.surfdata(fn,param);
+% else
+%   surf_layer = opsLoadLayers(tmp_param,param.array.surf_layer);
+% end
 
 %% Process
 % =========================================================================
@@ -257,6 +266,7 @@ for img = 1:length(param.array.imgs)
               .* exp(1i*( ...
               param.radar.wfs(wf).chan_equal_deg(param.radar.wfs(wf).rx_paths(adc)) ...
               - sar_data.param_sar.radar.wfs(wf).chan_equal_deg(param.radar.wfs(wf).rx_paths(adc)) )/180*pi);
+            
           end
           
           % Correct any changes in Tsys
@@ -276,7 +286,7 @@ for img = 1:length(param.array.imgs)
           % Load next chunk data
           % ===============================================================
           
-          % If on the last chunk of the frame, then look at the next 
+          % If on the last chunk of the frame, then look at the next
           % frame. Special case when frm > number-of-frames checked.
           if param.load.chunk_idx == param.load.num_chunks
             load_frm = param.load.frm+1;
@@ -425,7 +435,7 @@ for img = 1:length(param.array.imgs)
   
   param.array_proc.chan_equal = chan_equal;
   param.array_proc.fcs = fcs;
-  
+ 
   %% Process: WBDCM Setup
   % =======================================================================
   % Setup fields for wideband space-time doa estimator passed to
@@ -517,18 +527,18 @@ for img = 1:length(param.array.imgs)
       param.array_proc.surface = surf_layer.twtt*ones(size(param.array_proc.lines));
     else
       
-      if strcmpi(param.array.surf_layer.source, 'surfData')
+      if strcmpi(param.array.surf_layer.source, 'surf_sar')
         % If surf_layer source is surfData (twtt from DEM), just grab values
         % for the chunk
-        surf_index = surf_layer.get_index('top twtt');
-        icemask_index = surf_layer.get_index('ice_mask');
-        theta_frm     = repmat(surf_layer.theta,1,numel(surf_layer.gps_time));
+        surf_index = surf_layer.get_index({'top twtt'});
+        icemask_index = surf_layer.get_index({'ice_mask'});
+        theta_frm     = repmat(surf_layer.x(:,1),1,numel(surf_layer.gps_time));
         gps_frm       = repmat(surf_layer.gps_time,numel(surf_layer.theta),1);
-        theta_chunk   = repmat(surf_layer.theta,1,numel(fcs{1}{1}.gps_time));
+        theta_chunk   = repmat(surf_layer.x(:,1),1,numel(fcs{1}{1}.gps_time));
         gps_chunk     = repmat(fcs{1}{1}.gps_time,numel(surf_layer.theta),1);
         param.array_proc.surface = interp_finite(interp2(gps_frm, theta_frm,surf_layer.surf(surf_index).y,gps_chunk,theta_chunk));
         param.array_proc.ice_mask = ...
-        interp_finite(interp2(gps_frm,theta_frm,surf_layer.surf(icemask_index).y,gps_chunk,theta_chunk,'nearest'));
+          interp_finite(interp2(gps_frm,theta_frm,surf_layer.surf(icemask_index).y,gps_chunk,theta_chunk,'nearest'));
         param.array_proc.surface_theta = surf_layer.theta;
       else
         % source = 'layerData'
@@ -621,19 +631,19 @@ for img = 1:length(param.array.imgs)
     elseif length(surf_layer.gps_time) == 1;
       % Handle special case 2: gps time is length 1, repeat twtt over rlines
       param.array_proc.surface = surf_layer.twtt*ones(size(rlines));
-    elseif strcmpi(param.array.surf_layer.source,'surfData')
+    elseif strcmpi(param.array.surf_layer.source,'surf_sar')
       % If surf_layer source is surfData (twtt from DEM), just grab values
       % for the chunk
-      surf_index = surf_layer.get_index('top twtt');
-      icemask_index = surf_layer.get_index('ice_mask');
-      theta_frm     = repmat(surf_layer.theta,1,numel(surf_layer.gps_time));
-      gps_frm       = repmat(surf_layer.gps_time,numel(surf_layer.theta),1);
-      theta_chunk   = repmat(surf_layer.theta,1,numel(fcs{1}{1}.gps_time));
-      gps_chunk     = repmat(fcs{1}{1}.gps_time,numel(surf_layer.theta),1);
-      param.array_proc.surface = interp_finite(interp2(gps_frm, theta_frm,surf_layer.surf(surf_index).y,gps_chunk,theta_chunk));
+      surf_index = surf_layer.get_index({'top twtt'});
+      icemask_index = surf_layer.get_index({'ice mask'});
+      param.array_proc.surface_theta = surf_layer.surf(surf_index).x(:,1);
+      theta_frm     = repmat(param.array_proc.surface_theta,1,numel(surf_layer.gps_time));
+      gps_frm       = repmat(surf_layer.gps_time,length(param.array_proc.surface_theta),1);
+      theta_chunk   = repmat(param.array_proc.surface_theta,1,numel(fcs{1}{1}.gps_time));
+      gps_chunk     = repmat(fcs{1}{1}.gps_time,length(param.array_proc.surface_theta),1);
+      param.array_proc.surface = interp_finite(interp2(gps_frm, theta_frm,surf_layer.surf(surf_index).y,gps_chunk,theta_chunk),nan);
       param.array_proc.ice_mask = ...
-      interp_finite(interp2(gps_frm,theta_frm,surf_layer.surf(icemask_index).y,gps_chunk,theta_chunk,'nearest'));
-      param.array_proc.surface_theta = surf_layer.theta;
+        interp_finite(interp2(gps_frm,theta_frm,surf_layer.surf(icemask_index).y,gps_chunk,theta_chunk,'nearest'),nan);
     else
       % Path for layer
       param.array_proc.surface = interp_finite(interp1(surf_layer.gps_time, ...
@@ -643,6 +653,49 @@ for img = 1:length(param.array.imgs)
     
     %     end
     
+    % Load Look Up Table
+    if strcmpi(param.array.sv_model,'lookup_table')
+      % To be updated.  Currently LUT is stored by day_seg.  Intent is to have
+      % one LUT for the season in the analysis folder.  Once estimate_sv_lut
+      % has been updated, delete first conditional and only use the statement
+      % after the else below.
+      
+      % Does not support subband luts
+      if regexp(param.array.sv_lut_path,'analysis')
+        lut_fn = fullfile(ct_filename_out(param,param.array.sv_lut_path,[],1),'lut.mat');
+      elseif isfield(param.array, 'lut_day_seg') && ~isempty(param.array.lut_day_seg)
+        lut_dir = fullfile(ct_filename_out(param,param.array.sv_lut_path,[],1),param.array.lut_day_seg);
+        lut_fn = fullfile(lut_dir, sprintf('lut_%s.mat',param.array.lut_day_seg));
+      else      
+        lut_dir = ct_filename_out(param,param.array.sv_lut_path);
+        lut_fn = fullfile(lut_dir, sprintf('lut_%s.mat',param.day_seg));
+      end
+%       if strcmpi(param.array.sv_lut_path,'estimate_sv_lut')
+%         lut_dir = ct_filename_out(param,param.array.sv_lut_path);
+%         lut_fn = fullfile(lut_dir, sprintf('lut_%s.mat',param.day_seg));
+%       else
+%         lut_fn = fullfile(ct_filename_out(param,param.array.sv_lut_path,[],1),'lut.mat');
+%       end
+      load(lut_fn,'sv','doa','param_estimate_sv_lut');
+      
+      lut_sv = nan(length(doa),size(param.array.imgs{img}{1}(:,1),1));
+      
+      wf = param.array.imgs{img}{1}(1,1);
+      for wf_adc = 1:size(param.array.imgs{img}{1}(:,1),1)
+        wf = param.array.imgs{img}{1}(wf_adc,1);
+        adc = param.array.imgs{img}{1}(wf_adc,2);
+        rx = param.radar.wfs(wf).rx_paths(adc);
+        rx_lut_index = find(param_estimate_sv_lut.rx_list == rx);
+        if ~isempty(rx_lut_index)
+          lut_sv(:,wf_adc) = sv(:,rx_lut_index);
+        end
+      end
+      param.array_proc.lut.sv = lut_sv;
+      param.array_proc.lut.doa = doa;
+      clear sv doa
+    else
+      param.array_proc.lut = [];
+    end
     % Array Processing Function Call
     [param,dout] = array_proc(param,data);
   end

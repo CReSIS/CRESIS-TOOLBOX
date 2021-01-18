@@ -110,7 +110,7 @@ for task_idx = 1:length(task_ids)
     gRadar.cluster.is_cluster_job = false;
     
     if ctrl.cluster.dbstop_if_error
-      dbstop_if_error = false;
+      dbstop_if_error = false; 
       breakpoints = dbstatus;
       for idx=1:length(breakpoints)
         if strcmpi(breakpoints(idx).cond,'error') && length(breakpoints(idx).identifier)==1 && strcmpi(breakpoints(idx).identifier{1},'all')
