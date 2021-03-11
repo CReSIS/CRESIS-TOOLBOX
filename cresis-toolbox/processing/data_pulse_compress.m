@@ -1423,39 +1423,7 @@ for img = 1:length(param.load.imgs)
       hold on;
       plot(lp(afterf(:,rline)));
     end
-    
-    %% Nulling unsteady Doppler spikes for specified range bins (for example, 20181011_02)
-    % .DSN, a parameter structure to control the Doppler spike nulling
-    %     .en, 0 or 1 to disable or enable the nulling 
-    %     .rbin_clusters, N by 2 array, N is the number of range bin
-    %      clusters, the first and the second collumns specify the start and stop range bin respectively for each range bin cluster
-    %     .threshold, Doppler threshold in dB above the mean of local Doppler signals
-    %     .surf_threshold, surface threshold in dB above the mean of local signals
-    if isfield(wfs(wf),'DSN') && wfs(wf).DSN.en
-      for rcluster = 1:size(wfs(wf).DSN.rbin_clusters,1)
-        for rbin = wfs(wf).DSN.rbin_clusters(rcluster,1):wfs(wf).DSN.rbin_clusters(rcluster,2)
-          good_rline_idxs = ~isnan(data{1}(rbin,:));
-          tmp = data{1}(rbin,good_rline_idxs);
-          thresholding_idxs = find(lp(tmp)>mean(lp(tmp))+wfs(wf).DSN.surf_threshold);
-          if ~isempty(thresholding_idxs)
-            continue                      % skipping surface remove most part of noise in general without  nulling artifact
-%           tmp(thresholding_idxs) = 0;   % thresholding surface signals
-          end
-          tmp = fft(tmp);
-          tmp_m = mean(lp(tmp));
-          tmp_spikes = lp(tmp)-tmp_m;
-          spike_idxs = find(tmp_spikes>wfs(wf).DSN.threshold);
-%           tmp = fft(data{1}(rbin,:));
-          if length(spike_idxs) >0
-            for spike_idx = 1:length(spike_idxs)
-              tmp(spike_idxs(spike_idx)) = 10^(-tmp_spikes(spike_idxs(spike_idx))/20)*tmp(spike_idxs(spike_idx));
-            end
-          end
-          data{1}(rbin,good_rline_idxs) = ifft(tmp);
-        end
-      end
-    end
-    
+        
     %% Deconvolution
     % ===================================================================
     if param.load.pulse_comp == 1 && wfs(wf).deconv.en && wfs(wf).Nt > 0
@@ -1563,6 +1531,37 @@ for img = 1:length(param.load.imgs)
       
     end
     
+    %% Nulling unsteady Doppler spikes for specified range bins (for example, 20181011_02)
+    % .DSN, a parameter structure to control the Doppler spike nulling
+    %     .en, 0 or 1 to disable or enable the nulling 
+    %     .rbin_clusters, N by 2 array, N is the number of range bin
+    %      clusters, the first and the second collumns specify the start and stop range bin respectively for each range bin cluster
+    %     .threshold, Doppler threshold in dB above the mean of local Doppler signals
+    %     .surf_threshold, surface threshold in dB above the mean of local signals
+    if isfield(wfs(wf),'DSN') && wfs(wf).DSN.en
+      for rcluster = 1:size(wfs(wf).DSN.rbin_clusters,1)
+        for rbin = wfs(wf).DSN.rbin_clusters(rcluster,1):wfs(wf).DSN.rbin_clusters(rcluster,2)
+          good_rline_idxs = ~isnan(data{1}(rbin,:));
+          tmp = data{1}(rbin,good_rline_idxs);
+          thresholding_idxs = find(lp(tmp)>mean(lp(tmp))+wfs(wf).DSN.surf_threshold);
+          if ~isempty(thresholding_idxs)
+            continue                      % skipping surface removes most part of noise in general without  nulling artifact
+%           tmp(thresholding_idxs) = 0;   % thresholding surface signals
+          end
+          tmp = fft(tmp);
+          tmp_m = mean(lp(tmp));
+          tmp_spikes = lp(tmp)-tmp_m;
+          spike_idxs = find(tmp_spikes>wfs(wf).DSN.threshold);
+          if length(spike_idxs) >0
+            for spike_idx = 1:length(spike_idxs)
+              tmp(spike_idxs(spike_idx)) = 10^(-tmp_spikes(spike_idxs(spike_idx))/20)*tmp(spike_idxs(spike_idx));
+            end
+            data{1}(rbin,good_rline_idxs) = ifft(tmp);
+          end
+        end
+      end
+    end
+
   end
   
   if param.load.pulse_comp == 1

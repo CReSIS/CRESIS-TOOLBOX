@@ -5,11 +5,20 @@ function [success] = nsidc_delivery_script_task(param)
 %
 % Author: Yi Zhu, John Paden
 
+command_window_out_fn = ct_filename_ct_tmp(rmfield(param,'day_seg'),'','nsidc_delivery_script', sprintf('%s_console_%s.txt',param.day_seg, datestr(now,'YYYYmmDD_HHMMSS')));
+command_window_out_fn_dir = fileparts(command_window_out_fn);
+if ~exist(command_window_out_fn_dir,'dir')
+  mkdir(command_window_out_fn_dir);
+end
+diary(command_window_out_fn);
+
 USER_SPECIFIED_DIRECTORY_BASE = param.nsidc.USER_SPECIFIED_DIRECTORY_BASE;
 L1B_cmd = param.nsidc.L1B_cmd;
 data_dir_L1 = param.nsidc.data_dir_L1;
 data_dir_L1_extra = param.nsidc.data_dir_L1_extra;
 image_extra = param.nsidc.image_extra;
+images_1echo_en = param.nsidc.images_1echo_en;
+images_2echo_picks_en = param.nsidc.images_2echo_picks_en;
 L1B_supplement_cmd = param.nsidc.L1B_supplement_cmd;
 L1B_supplement_name = param.nsidc.L1B_supplement_name;
 L1B_supplement_name_extra = param.nsidc.L1B_supplement_name_extra;
@@ -60,13 +69,13 @@ premet_param = [];
 
 % Construct the necessary element: AircraftID and platform_short_name
 if strcmpi(platform,'P3')
-    if strcmpi(season_name_year,'2016')
-        premet_param.nsidc_platform_short_name = 'WP-3D ORION';        
-        premet_param.nsidc_aircraft_id = 'N43RF';
-    else
-        premet_param.nsidc_platform_short_name = 'P-3B';        % change to meet the valids file
-        premet_param.nsidc_aircraft_id = 'N426NA';
-    end
+  if strcmpi(season_name_year,'2016')
+    premet_param.nsidc_platform_short_name = 'WP-3D ORION';
+    premet_param.nsidc_aircraft_id = 'N43RF';
+  else
+    premet_param.nsidc_platform_short_name = 'P-3B';        % change to meet the valids file
+    premet_param.nsidc_aircraft_id = 'N426NA';
+  end
 elseif strcmpi(platform,'DC8')
   premet_param.nsidc_platform_short_name = 'DC-8';
   premet_param.nsidc_aircraft_id = 'N817NA';
@@ -168,6 +177,7 @@ if L2_cmd
   else
     % Copy csv file
     [flag,message,~] = copyfile(csv_fn,new_csv_fn);
+    if ~flag; warning('Skipped: csv file %s', new_csv_fn); end
     
     % Create the data filename without extension
     premet_param.data_fn_name = sprintf('%s_%s', ...
@@ -269,24 +279,20 @@ if L1B_cmd
       param.day_seg, sprintf('%s_%03d_2echo_picks.jpg',param.day_seg,frm));
     new_echogram_picks_fn = fullfile(out_data_dir, ...
       sprintf('%s%s_%s_%03d_%s.jpg',radar_type,data_type,param.day_seg,frm,'Echogram_Picks'));
-  
-   
+    
+    
     % Check for the existence of image files
     if ~exist(map_fn,'file')
       warning('Skipping: missing map file %s', map_fn);
-      keyboard;
-      continue;
     end
-    if ~exist(echogram_fn,'file')
-      warning('Skipping: missing echogram file %s', echogram_fn);
-      keyboard;
-      continue;
+    if images_1echo_en
+      if ~exist(echogram_fn,'file')
+        warning('Skipping: missing echogram file %s', echogram_fn);
+      end
     end
-    if strcmpi(radar_type,'IRMCR')
+    if images_2echo_picks_en
       if ~exist(echogram_picks_fn,'file')
-        warning('Skipping: missing pick file %s', echogram_fn);
-        keyboard;
-        continue;
+        warning('Skipping: missing echogram_picks file %s', echogram_picks_fn);
       end
     end
     
@@ -298,20 +304,48 @@ if L1B_cmd
     
     % Copy image files
     [flag,message,~] = copyfile(map_fn,new_map_fn);
-    [flag,message,~] = copyfile(echogram_fn,new_echogram_fn);
-    if strcmpi(radar_type,'IRMCR')
-      [flag,message,~] = copyfile(echogram_picks_fn,new_echogram_picks_fn);
+    if ~flag; warning('Skipped: map file %s', new_map_fn); end
+    
+    if strcmpi(radar_type,'IRMCR') % Only for MCoRDS
+      if images_1echo_en
+        [flag,message,~] = copyfile(echogram_fn,new_echogram_fn);
+        if ~flag; warning('Skipped: echogram file %s', new_echogram_fn); end
+      end
+      if images_2echo_picks_en
+        [flag,message,~] = copyfile(echogram_picks_fn,new_echogram_picks_fn);
+        if ~flag; warning('Skipped: echogram_picks file %s', new_echogram_picks_fn); end
+      end
     end
     
     % create extra image filenames
-    for extra_idx = 1:size(image_extra,1)
-        echogram_fn = fullfile(ct_filename_out(param,'post','',1),'images', ...
-            param.day_seg, sprintf('%s_%03d_1echo_%s.jpg',param.day_seg,frm,image_extra{extra_idx}));
+    for extra_idx = 1:size(image_extra,1) %% customized for SNOW
+      if images_1echo_en
+        echogram_fn = fullfile(ct_filename_out(param,'post','',1),sprintf('images_%s',image_extra{extra_idx}), ...
+          param.day_seg, sprintf('%s_%03d_1echo.jpg',param.day_seg,frm));
         new_echogram_fn = fullfile(out_data_dir, ...
-            sprintf('%s%s_%s_%03d_%s_%s.jpg',radar_type,data_type,param.day_seg,frm,image_extra{extra_idx},'Echogram'));
-        [flag,message,~] = copyfile(echogram_fn,new_echogram_fn);
+          sprintf('%s%s_%s_%03d_%s_%s.jpg',radar_type,data_type,param.day_seg,frm,image_extra{extra_idx},'Echogram'));
+        if ~exist(echogram_fn,'file')
+          warning('Skipping: missing extra echogram file %s', echogram_fn);
+        else
+          [flag,message,~] = copyfile(echogram_fn,new_echogram_fn);
+          if ~flag; warning('Skipped: extra echogram file %s', new_echogram_fn); end
+        end
+      end
+      if images_2echo_picks_en
+        echogram_picks_fn = fullfile(ct_filename_out(param,'post','',1),sprintf('images_%s',image_extra{extra_idx}), ...
+          param.day_seg, sprintf('%s_%03d_2echo_picks.jpg',param.day_seg,frm));
+        if strcmpi(image_extra{extra_idx}, 'deconv') % naming convention different for deconv
+          new_echogram_picks_fn = fullfile(out_data_dir, ...
+            sprintf('%s%s_%s_%03d_%s.jpg',radar_type,data_type,param.day_seg,frm,'Echogram')); % _Picks for snow
+        else
+          new_echogram_picks_fn = fullfile(out_data_dir, ...
+            sprintf('%s%s_%s_%03d_%s_%s.jpg',radar_type,data_type,param.day_seg,frm,image_extra{extra_idx},'Echogram')); % _Picks for snow
+        end
+        [flag,message,~] = copyfile(echogram_picks_fn,new_echogram_picks_fn);
+        if ~flag; warning('Skipped: extra echogram_picks file %s', new_echogram_picks_fn); end
+      end
     end
-   
+    
     % Create .premet, .spatial files for L1B data
     premet_param_merged = merge_structs(premet_param, premet_param_L1B);
     nsidc_create_premet_L1B(echo_fn,out_fn_premet_L1B,premet_param_merged);
@@ -370,8 +404,10 @@ if L1B_cmd
   end
 end
 
-if L1B_supplement_cmd
+if L1B_supplement_cmd && ~isempty(L1B_supplement_name)
   %% Create .nc supplement files
+  
+  data_type = '1B';
   
   for frm_idx = 1:length(param.cmd.frms)
     frm = param.cmd.frms(frm_idx);
@@ -395,9 +431,9 @@ if L1B_supplement_cmd
     if ~exist(out_data_dir,'dir')
       mkdir(out_data_dir);
     end
-    if strcmpi(param.radar_name,'snow8')
-        frames.quality = frames.quality_snow;
-    end     
+%     if strcmpi(param.radar_name,'snow8')
+%       frames.quality = frames.quality_snow;
+%     end
     supplement = [];
     supplement.coh_noise_removal_artifact = uint8(mod(floor(frames.quality(frm)/2^0),2));
     supplement.deconvolution_artifact = uint8(mod(floor(frames.quality(frm)/2^1),2));
@@ -410,28 +446,32 @@ if L1B_supplement_cmd
     
     fprintf('   nc: %s\n', out_fn_netcdf);
     
-    netcdf_from_mat(out_fn_netcdf,supplement,supplement_netcdf_param);
-    if exist('L1B_supplement_name_extra','var') || ~isempty(L1B_supplement_name_extra)
-        for extra_idx = 1:size(L1B_supplement_name_extra,1)
-            out_fn_netcdf = fullfile(ct_filename_out(param,USER_SPECIFIED_DIRECTORY,'',1), ...
-                sprintf('%s%s_Files', radar_type, data_type),data_files_dir, ...
-                sprintf('%s%s_%s_%03d_%s_%s.nc',radar_type, data_type, param.day_seg, frm,L1B_supplement_name_extra{extra_idx}, L1B_supplement_name));
-            frames.quality = frames.(sprintf('quality_%s',L1B_supplement_name_extra{extra_idx}));
-            supplement = [];
-            supplement.coh_noise_removal_artifact = uint8(mod(floor(frames.quality(frm)/2^0),2));
-            supplement.deconvolution_artifact = uint8(mod(floor(frames.quality(frm)/2^1),2));
-            supplement.vertical_stripes_artifact = uint8(mod(floor(frames.quality(frm)/2^2),2));
-            supplement.missing_data = uint8(mod(floor(frames.quality(frm)/2^3),2));
-            supplement.no_good_data = uint8(mod(floor(frames.quality(frm)/2^4),2));
-            supplement.low_SNR = uint8(mod(floor(frames.quality(frm)/2^5),2));
-            supplement.unclassified_artifact = uint8(mod(floor(frames.quality(frm)/2^6),2));
-            supplement.land_ice = uint8(mod(floor(frames.quality(frm)/2^7),2));
-            fprintf('   extra nc: %s\n', out_fn_netcdf);
-            netcdf_from_mat(out_fn_netcdf,supplement,supplement_netcdf_param);
-        end
+    netcdf_from_mat(out_fn_netcdf,supplement,supplement_netcdf_param); % THIS FOR SNOW IS for deconv
+    
+    if exist('L1B_supplement_name_extra','var') && any(~cellfun(@isempty,L1B_supplement_name_extra)) % ~isempty(L1B_supplement_name_extra{1})
+      for extra_idx = 1:size(L1B_supplement_name_extra,1)
+        out_fn_netcdf = fullfile(ct_filename_out(param,USER_SPECIFIED_DIRECTORY,'',1), ...
+          sprintf('%s%s_Files', radar_type, data_type),data_files_dir, ...
+          sprintf('%s%s_%s_%03d_%s_%s.nc',radar_type, data_type, param.day_seg, frm,L1B_supplement_name_extra{extra_idx}, L1B_supplement_name));
+%         frames.quality = frames.(sprintf('quality_%s',L1B_supplement_name_extra{extra_idx}));
+        supplement = [];
+        supplement.coh_noise_removal_artifact = uint8(mod(floor(frames.quality(frm)/2^0),2));
+        supplement.deconvolution_artifact = uint8(mod(floor(frames.quality(frm)/2^1),2));
+        supplement.vertical_stripes_artifact = uint8(mod(floor(frames.quality(frm)/2^2),2));
+        supplement.missing_data = uint8(mod(floor(frames.quality(frm)/2^3),2));
+        supplement.no_good_data = uint8(mod(floor(frames.quality(frm)/2^4),2));
+        supplement.low_SNR = uint8(mod(floor(frames.quality(frm)/2^5),2));
+        supplement.unclassified_artifact = uint8(mod(floor(frames.quality(frm)/2^6),2));
+        supplement.land_ice = uint8(mod(floor(frames.quality(frm)/2^7),2));
+        fprintf('   extra nc: %s\n', out_fn_netcdf);
+        netcdf_from_mat(out_fn_netcdf,supplement,supplement_netcdf_param);
+      end
     end
   end
 end
+
+diary off;
+fprintf('Console output: %s\n', command_window_out_fn);
 
 success = 1;
 

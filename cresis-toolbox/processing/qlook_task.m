@@ -114,18 +114,27 @@ output_recs_ps = output_recs_ps(output_recs_ps >= load_recs_ps(1));
 % Determine number of records before/after the start/stop output record
 % that are needed for the filtering
 start_buffer_ps = (length(param.qlook.inc_B_filter)-1)/2*param.qlook.dec + (length(param.qlook.B_filter)-1)/2;
-stop_buffer_ps = (length(param.qlook.inc_B_filter)-1)/2*param.qlook.dec + (length(param.qlook.B_filter)-1)/2;
+stop_buffer_ps = start_buffer_ps;
+
+% If do Doppler spikes nulling, add extra buffers at the start and end to
+% avoid bounary artifact from fft and ifft transforms
+if isfield(param.radar.wfs,'DSN') && param.radar.wfs.DSN.en
+  start_buffer_ps = 10*start_buffer_ps;
+  stop_buffer_ps = 10*stop_buffer_ps;
+end
 
 % Adjust start_buffer_ps in case at the beginning of the segment
 start_buffer_ps = start_buffer_ps - max(0,(1- (output_recs_ps(1) - start_buffer_ps) ));
 
 % These are the input records (in presummed record counts)
 input_recs_ps(1) = output_recs_ps(1) - start_buffer_ps;
-input_recs_ps(2) = output_recs_ps(end) + stop_buffer_ps + 1;
+% input_recs_ps(2) = output_recs_ps(end) + stop_buffer_ps + 1;
+input_recs_ps(2) = output_recs_ps(end) + stop_buffer_ps;
 
 % These are the input records in raw record counts
 param.load.recs(1) = param.qlook.presums * (input_recs_ps(1) - 1) + 1;
-param.load.recs(2) = param.qlook.presums * input_recs_ps(2);
+% param.load.recs(2) = param.qlook.presums * input_recs_ps(2);
+param.load.recs(2) = param.qlook.presums * (input_recs_ps(2)-1) + 1;
 
 % Load the records
 records = records_load(param,param.load.recs);
@@ -176,7 +185,6 @@ param.load.bit_mask = param.qlook.bit_mask; % Skip bad records marked in records
 
 param.load.pulse_comp = true;
 [hdr,data,param] = data_pulse_compress(param,hdr,data);
-
 param.load.motion_comp = param.qlook.motion_comp;
 param.load.combine_rx = true;
 [hdr,data] = data_merge_combine(param,hdr,data);

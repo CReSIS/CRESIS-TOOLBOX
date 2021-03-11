@@ -195,8 +195,13 @@ if strcmpi(param.sched.type,'custom_torque')
 end
 
 %% Main loop for each segment
-params = read_param_xls(params_fn);
+% params = read_param_xls(params_fn);
+local_counter = 0; sub_counter1=0; sub_counter2=0; sub_counter3=0;
 for param_idx = 1:length(params)
+  
+  %init
+  L1B_supplement_name = '';
+  L1B_supplement_name_extra = {''};
   
   param = params(param_idx);
   param = merge_structs(param, param_override);
@@ -206,11 +211,51 @@ for param_idx = 1:length(params)
     continue;
   end
   
+  if ~isempty(regexpi(param.cmd.notes,'2-18')) % 2-18 GHz -- deconv, uwb, kuband
+    local_counter = local_counter +1;
+    sub_counter1 = sub_counter1 +1;
+    fprintf('2-18 GHz %s %d %d\n',param.day_seg, local_counter, sub_counter1);
+    data_dir_L1_extra = {fullfile('CSARP_post','deconv'), 'deconv';fullfile('CSARP_post','qlook_uwb'), 'uwb_deconv';fullfile('CSARP_post','qlook_kuband'), 'kuband'}; % Snow radar 2-18 GHz
+    image_extra = {'deconv';'uwb';'kuband'};  % Snow radar 2-18 GHz
+    if regexpi(param.cmd.mission_names,'^sea.*')
+      L1B_supplement_name = 'supplement'; % THIS IS FOR DECONV
+      L1B_supplement_name_extra = {'uwb';'kuband'}; % Snow: separate supplement files for different products
+    end
+
+  elseif ~isempty(regexpi(param.cmd.notes,'2-8')) % 2-8 GHz -- deconv
+    local_counter = local_counter +1;
+    sub_counter2 = sub_counter2 +1;
+    fprintf('2- 8 GHz %s %d %d\n',param.day_seg, local_counter, sub_counter2);
+    data_dir_L1_extra = {fullfile('CSARP_post','deconv'), 'deconv'}; % Snow radar 2-8 GHz with deconv file
+    image_extra = {'deconv'};  % Snow radar 2- 8 GHz
+    if regexpi(param.cmd.mission_names,'^sea.*')
+      L1B_supplement_name = 'supplement';
+      L1B_supplement_name_extra = {''}; % Snow: separate supplement files for different products
+    end
+    
+  
+  else % --
+    local_counter = local_counter +1;
+    sub_counter3 = sub_counter3 +1;
+    fprintf('Misc GHz %s %d %d\n',param.day_seg, local_counter, sub_counter3);
+    data_dir_L1_extra = {}; % All others
+    image_extra = {};  % All others
+    if regexpi(param.cmd.mission_names,'^sea.*')
+      L1B_supplement_name = '';
+      L1B_supplement_name_extra = {''}; % Snow: If no separate supplement files
+    end
+    
+    
+  end
+%   continue;
+  
   param.nsidc.USER_SPECIFIED_DIRECTORY_BASE = USER_SPECIFIED_DIRECTORY_BASE;
   param.nsidc.L1B_cmd = L1B_cmd;
   param.nsidc.data_dir_L1 = data_dir_L1;
   param.nsidc.data_dir_L1_extra = data_dir_L1_extra;
   param.nsidc.image_extra = image_extra;
+  param.nsidc.images_1echo_en = images_1echo_en;
+  param.nsidc.images_2echo_picks_en = images_2echo_picks_en;
   param.nsidc.L1B_supplement_cmd = L1B_supplement_cmd;
   param.nsidc.L1B_supplement_name = L1B_supplement_name;
   param.nsidc.L1B_supplement_name_extra = L1B_supplement_name_extra;
@@ -236,7 +281,7 @@ for param_idx = 1:length(params)
     ctrl = torque_create_task(ctrl,fh,1,arg,create_task_param);
     
   else
-    fprintf('%s (%s)', param.day_seg, datestr(now));
+    fprintf('%s (%s)\n', param.day_seg, datestr(now));
     [success] = fh(arg{1});
   end
   
