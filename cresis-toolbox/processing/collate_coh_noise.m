@@ -97,7 +97,7 @@ end
 
 if ~isfield(param.collate_coh_noise,'firdec_fcutoff') || isempty(param.collate_coh_noise.firdec_fcutoff)
   for img = param.collate_coh_noise.imgs
-    param.collate_coh_noise.firdec_fcutoff{img} = 0;
+    param.collate_coh_noise.firdec_fcutoff{img} = @(x) 0;
   end
 end
 
@@ -184,7 +184,8 @@ for img = param.collate_coh_noise.imgs
         if strcmpi( param_collate_coh_noise.method{img}, param.collate_coh_noise.method{img} ) ...
             && param_collate_coh_noise.dft_corr_time(img) == param.collate_coh_noise.dft_corr_time(img) ...
             && param_collate_coh_noise.firdec_fs{img} == param.collate_coh_noise.firdec_fs{img} ...
-            && strcmpi( func2str(param_collate_coh_noise.firdec_fcutoff{img}), func2str(param.collate_coh_noise.firdec_fcutoff{img}) )...
+            && ( ~isa(param_collate_coh_noise.firdec_fcutoff{img},'function_handle') ...
+                || strcmpi( func2str(param_collate_coh_noise.firdec_fcutoff{img}), func2str(param.collate_coh_noise.firdec_fcutoff{img}) )  )... 
             && param_collate_coh_noise.threshold_en == param.collate_coh_noise.threshold_en ...
             && param_collate_coh_noise.threshold_fir_dec == param.collate_coh_noise.threshold_fir_dec
           load(reuse_fn);
@@ -207,7 +208,7 @@ for img = param.collate_coh_noise.imgs
         else
           reuse_success = 0;
         end
-      catch
+      catch ME
         fprintf('Unable to reuse file: %s\n',reuse_fn);
         reuse_success = 0;
       end
@@ -262,6 +263,10 @@ for img = param.collate_coh_noise.imgs
       
       dx = max(1,round(1/(dgps_time * param.collate_coh_noise.firdec_fs{img})));
       dec_idxs = 1:dx:Nx;
+      if length(dec_idxs) < 2 && strcmpi(param.collate_coh_noise.method{img},'firdec')
+        warning('Using DFT instead of FIR_DEC. length(dec_idxs)<2 causes fir_dec''s coh_bin calculation to fail because noise_est uses interp1 on non-vector firdec_gps_time.');
+        param.collate_coh_noise.method{img} = 'dft';
+      end
       firdec_gps_time = noise.gps_time(dec_idxs);
       Nx_coh_noise = length(dec_idxs);
       firdec_noise = zeros(Nt, Nx_coh_noise, 'single');

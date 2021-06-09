@@ -24,10 +24,15 @@ elseif isstruct(ctrl_chain)
   ctrl = ctrl_chain;
   
   error_task_ids = find(ctrl.error_mask);
+  if 0 % special case to reset failed and/or queued jobs
+    queued_task_ids = regexp(ctrl.job_status,'Q');
+    error_task_ids = union(error_task_ids,queued_task_ids);
+  end
   ctrl.error_mask(error_task_ids) = 0;
   ctrl.retries(error_task_ids) = 0;
   ctrl.job_status(error_task_ids) = 'T';
   ctrl.submission_queue(end+(1:length(error_task_ids))) = error_task_ids;
+  ctrl.submission_queue = unique(ctrl.submission_queue);
   
   % Update output
   ctrl_chain = ctrl;

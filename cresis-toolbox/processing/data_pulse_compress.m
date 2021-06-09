@@ -37,7 +37,7 @@ for img = 1:length(param.load.imgs)
           nz = double(hdr.nyquist_zone_hw{img}(rec));
           % Check and load measured filter response for corresponding Nyquist Zone
           if ~(nz==nz_prev)
-            prepulse_fn = fullfile(ct_filename_out(param,prepulse_H.dir,'',1),...
+            prepulse_fn = fullfile(ct_filename_out(param,wfs(wf).prepulse_H.dir,'',1),...
               sprintf('%s_rx_%d_nz_%d.mat', param.radar.wfs(wf).prepulse_H.fn, rx, nz));
             prepulse = load(prepulse_fn);
             nz_signal_prev = NaN;
@@ -1436,8 +1436,13 @@ for img = 1:length(param.load.imgs)
       param.collate_deconv.param_analysis = deconv.param_analysis;
       param.collate_deconv.param_records = deconv.param_records;
       
-      deconv_map_idxs = interp1(deconv.map_gps_time,deconv.map_idxs,hdr.gps_time,'nearest','extrap');
-      max_score = interp1(deconv.map_gps_time,deconv.max_score,hdr.gps_time,'nearest','extrap');
+      if length(deconv.map_gps_time)==1
+        deconv_map_idxs = deconv.map_idxs;
+        max_score = deconv.max_score;
+      else
+        deconv_map_idxs = interp1(deconv.map_gps_time,deconv.map_idxs,hdr.gps_time,'nearest','extrap');
+        max_score = interp1(deconv.map_gps_time,deconv.max_score,hdr.gps_time,'nearest','extrap');
+      end
       
       unique_idxs = unique(deconv_map_idxs);
       

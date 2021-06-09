@@ -26,17 +26,17 @@ param_override.collate_deconv_update.cmd{end}.idxs = {[1]};
 
 % 2-18 GHz Deconvolution Settings (3 sets)
 % params = ct_set_params(params,'analysis.cmd{1}.abs_metric',[58 4.5 -25 -35 inf inf]);
-% param_override.collate_deconv_update.in_dir = 'analysis_uwb';
+% param_override.collate_deconv_update.in_path = 'analysis_uwb';
 
 % params = ct_set_params(params,'analysis.cmd{1}.abs_metric',[58 9.8 -25 -35 inf inf]);
-% param_override.collate_deconv_update.in_dir = 'analysis';
+% param_override.collate_deconv_update.in_path = 'analysis';
 
 % params = ct_set_params(params,'analysis.cmd{1}.abs_metric',[58 24 -25 -28 inf inf]);
-% param_override.collate_deconv_update.in_dir = 'analysis_kuband';
+% param_override.collate_deconv_update.in_path = 'analysis_kuband';
 
 % 2-8 GHz Deconvolution Settings
 % params = ct_set_params(params,'analysis.cmd{1}.abs_metric',[65 4.5 -25 -35 inf inf]);
-param_override.collate_deconv_update.in_dir = 'analysis';
+param_override.collate_deconv_update.in_path = 'analysis';
 
 % param_override.collate_deconv_update.debug_plots = {'final','visible'};
 param_override.collate_deconv_update.debug_plots = {'final'};
