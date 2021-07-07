@@ -22,10 +22,10 @@ fprintf('=====================================================================\n
 
 %% General User Settings
 
-temp = load('/cresis/snfs1/dataproducts/ct_data/ct_tmp/layer_tracker/rds/2014_Greenland_P3/20140516_01_20200416_183307_t032_lsm.mat'); % where param structure is stored
+temp = load('/cresis/snfs1/dataproducts/ct_data/ct_tmp/layer_tracker/rds/2014_Greenland_P3/20140516_01_20200909_032808_t056_lsm.mat');
 param= temp.param;
 filename = ct_filename_out(param,param.layer_tracker.layer_params.layerdata_source,'layer_tracker_tmp'); % where temporary files are saved
-save_name = '/cresis/snfs1/scratch/anjali/cluster_tuning/result1.mat'; % where to store tuning final result
+save_name = '/cresis/snfs1/scratch/anjali/cluster_tuning/resultTest3.mat'; % where to store tuning final result
 
 gt_layer_params = [];
 res_matrix = [];

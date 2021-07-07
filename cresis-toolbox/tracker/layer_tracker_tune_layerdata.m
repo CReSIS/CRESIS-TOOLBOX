@@ -11,7 +11,6 @@
 %   number of points where (tracked data twtt - ground truth twtt) < 5 * dt (num_points)
 %   nanmean of (tracked data twtt - ground truth twtt) (res_matrix)
 % Authors: Anjali Pare, John Paden
-%
 % See layer_tracker_tune_plot.m to view 2 dimensional imagesc plots of the data.
 
 dbstack_info = dbstack;
@@ -21,11 +20,12 @@ fprintf('=====================================================================\n
 
 %% General User Settings
 
-temp = load('/cresis/snfs1/dataproducts/ct_data/ct_tmp/layer_tracker/rds/2014_Greenland_P3/20140516_01_20200416_183307_t032_lsm.mat'); % where param structure is stored
+temp = load('/cresis/snfs1/dataproducts/ct_data/ct_tmp/layer_tracker/rds/2014_Greenland_P3/20140516_01_20200921_121933_t063_lsm.mat');
 param= temp.param;
-save_name = '/cresis/snfs1/scratch/anjali/cluster_tuning/result2.mat'; % where to store tuning final result
+save_name = '/cresis/snfs1/scratch/anjali/cluster_tuning/result_layer_tune_mean.mat'; % where to store tuning final result
 
 gt_layer_params = [];
+layer_params = [];
 res_matrix = [];
 num_layers = 0;
 idx = 1;
@@ -56,12 +56,18 @@ for track_idx = 1:length(param.layer_tracker.track)
     data = load(data_fn);
     dt = data.Time(2) - data.Time(1);
     for layer_idx = 1:length(gt_layer_params)
-      
-      for idx = 1:length(param.layer_tracker.track{track_idx}.lsm.storeIter)
-        layer_params(idx).name = sprintf('%s_%s_%s_%03d',param.layer_tracker.track{track_idx}.name,param.layer_tracker.track{track_idx}.method,gt_layer_params(layer_idx).name,idx);
-        layer_params(idx).source = param.layer_tracker.layer_params.source;
-        layer_params(idx).layerdata_source = param.layer_tracker.layer_params.layerdata_source;
+      if strcmpi(param.layer_tracker.track{1}.method,'lsm')
+        for idx = 1:length(param.layer_tracker.track{track_idx}.lsm.storeIter)
+          layer_params(idx).name = sprintf('%s_%s_%s_%03d',param.layer_tracker.track{track_idx}.name,param.layer_tracker.track{track_idx}.method,gt_layer_params(layer_idx).name,idx);
+          layer_params(idx).source = param.layer_tracker.layer_params.source;
+          layer_params(idx).layerdata_source = param.layer_tracker.layer_params.layerdata_source;
+        end
+      else
+        layer_params(1).name = sprintf('%s_%s_%s_%03d',param.layer_tracker.track{track_idx}.name,param.layer_tracker.track{track_idx}.method,gt_layer_params(layer_idx).name,idx);
+        layer_params(1).source = param.layer_tracker.layer_params.source;
+        layer_params(1).layerdata_source = param.layer_tracker.layer_params.layerdata_source;
       end
+      
       layers_new = opsLoadLayers(param,layer_params);
       
       surf = interp1(layers(layer_idx).gps_time,layers(layer_idx).twtt,data.GPS_time);
@@ -79,17 +85,67 @@ for track_idx = 1:length(param.layer_tracker.track)
     end
   end
 end
+
 points = [];
 min_val = [];
 res_matrix_all_frms = [];
-for layer_names = 1:num_layers
-  res_matrix_all_frms{layer_names} = nanmean(res_matrix{layer_names},1);
-  res_matrix_all_frms{layer_names} = permute(res_matrix_all_frms{layer_names},idx_matrix);
-  [min_val{layer_names},i]=min(res_matrix_all_frms{layer_names}(:));
-  sizeMatrix = size(res_matrix_all_frms{layer_names});
-  
-  for dim = 1:length(size(res_matrix_all_frms{layer_names}))
-    points{layer_names}(dim) = mod(floor((i-1)/prod(sizeMatrix(1:dim-1))),sizeMatrix(dim))+1;
+if strcmpi(param.layer_tracker.track{1}.method,'lsm')
+  if param.layer_tracker.track{track_idx}.flag ~= 1
+    for layer_names = 1:num_layers
+      res_matrix_all_frms{layer_names} = nanmean(res_matrix{layer_names},1);
+      res_matrix_all_frms{layer_names} = permute(res_matrix_all_frms{layer_names},idx_matrix);
+      [min_val{layer_names},i]=min(res_matrix_all_frms{layer_names}(:));
+      sizeMatrix = size(res_matrix_all_frms{layer_names});
+      for dim = 1:length(size(res_matrix_all_frms{layer_names}))
+        points{layer_names}(dim) = mod(floor((i-1)/prod(sizeMatrix(1:dim-1))),sizeMatrix(dim))+1;
+      end
+      if (length(size(res_matrix_all_frms{layer_names})) < length(param.layer_tracker.track{1}.idx_reshape))
+        points{layer_names}(dim+1) = 1;
+      end
+    end
+    
+  else
+    res_matrix_mean = [];
+    min_val_mean = [];
+    points_mean = [];
+    for layer_names = 1:num_layers
+      res_matrix_all_frms{layer_names} = nanmean(res_matrix{layer_names},1);
+      res_matrix_all_frms{layer_names} = permute(res_matrix_all_frms{layer_names},idx_matrix);
+      
+      res_matrix_mean{layer_names} = squeeze(res_matrix_all_frms{layer_names}(:,:,1)); % since we want all the combinations of number of itertaions and dy for the surface mean
+      res_matrix_all_frms{layer_names}(:,:,1) = [];
+      
+      [min_val{layer_names},i]=min(res_matrix_all_frms{layer_names}(:));
+      sizeMatrix = size(res_matrix_all_frms{layer_names});
+      for dim = 1:length(size(res_matrix_all_frms{layer_names}))
+        points{layer_names}(dim) = mod(floor((i-1)/prod(sizeMatrix(1:dim-1))),sizeMatrix(dim))+1;
+      end
+      
+      [min_val_mean{layer_names},j]=min(res_matrix_mean{layer_names}(:));
+      sizeMatrix = size(res_matrix_mean{layer_names});
+      for dim = 1:length(size(res_matrix_mean{layer_names}))
+        points_mean{layer_names}(dim) = mod(floor((j-1)/prod(sizeMatrix(1:dim-1))),sizeMatrix(dim))+1;
+      end
+      if (length(size(res_matrix_all_frms{layer_names})) < length(param.layer_tracker.track{1}.idx_reshape))
+        points{layer_names}(dim+1) = 1;
+      end
+      if (length(size(res_matrix_mean{layer_names})) < length(param.layer_tracker.track{1}.idx_reshape))
+        points_mean{layer_names}(dim+1) = 1;
+      end
+    end
+  end
+else
+  for layer_names = 1:num_layers
+    res_matrix_all_frms{layer_names} = nanmean(res_matrix{layer_names},1);
+    res_matrix_all_frms{layer_names} = permute(res_matrix_all_frms{layer_names},idx_matrix);
+    [min_val{layer_names},i]=min(res_matrix_all_frms{layer_names}(:));
+    sizeMatrix = size(res_matrix_all_frms{layer_names});
+    for dim = 1:length(size(res_matrix_all_frms{layer_names}))
+      points{layer_names}(dim) = mod(floor((i-1)/prod(sizeMatrix(1:dim-1))),sizeMatrix(dim))+1;
+    end
+    if (length(size(res_matrix_all_frms{layer_names})) < length(param.layer_tracker.track{1}.idx_reshape))
+      points{layer_names}(dim+1) = 1;
+    end
   end
 end
 
@@ -102,5 +158,4 @@ if ~exist(fn_dir,'dir')
 end
 
 save(save_name,'res_matrix','num_isnan','num_points','num_gt_isfinite','points','min_val','res_matrix_all_frms','param','file_version','file_type');
-
 

@@ -1,4 +1,4 @@
-function success = layer_tracker_tune_plot
+function success = layer_tracker_tune_plot_vit
 %% Function layer_tracker_tune_plot.m
 
 % Used to plot 2 dimensional imagesc plots of data matrix from layer_tracker_tune.m
@@ -14,7 +14,7 @@ function success = layer_tracker_tune_plot
 % =====================================================================
 %filename = ct_filename_out(param,param.layer_tracker.layer_params.layerdata_source,'layer_tracker_tmp'); %where temporary files are saved
 img_format = 'jpg';
-filename = '/cresis/snfs1/scratch/anjali/cluster_tuning/result_layer_tune_vit_s011.mat'; % where the matrix is saved. Images generated will be saved in the same folder
+filename = '/cresis/snfs1/scratch/anjali/cluster_tuning/result_layer_tune_vit_s012.mat'; % where the matrix is saved. Images generated will be saved in the same folder
 num_layers = 1; % enter number of layers
 img_dir = fileparts(filename);
 if ~exist(img_dir,'dir')
@@ -44,40 +44,17 @@ end
 for layer_idx = 1:num_layers
   res_mat = matrix_fn.res_matrix_all_frms{layer_idx};
   points = matrix_fn.points{layer_idx};
-  
-  A = nchoosek(1:length(param.layer_tracker.track{1}.idx_reshape),2); % changed from 2
-  for id = 1:length(A)
-    min_points = setdiff(1:length(param.layer_tracker.track{1}.idx_reshape),A(id,:));
-    min_idxs = points(min_points);
-    res_matrix = permute(res_mat,[A(id,:) setdiff(1:length(param.layer_tracker.track{1}.idx_reshape),A(id,:))]);
-    res_matrix = res_matrix(:,:,min_idxs(:));
-    idx = A(id,:);
-    labelTickX = data{idx(1)}; % x tick label
-    labelTickY = data{idx(2)}; % y tick label
-    labelNameX = param.layer_tracker.track{1}.idx_dim_name{idx(1)}; % x label name
-    labelNameY = param.layer_tracker.track{1}.idx_dim_name{idx(2)}; % y label name
-    xTick = 1:length(labelTickX); % x tick
-    yTick = 1:length(labelTickY); % y tick
-    %% Generate Figure
-    h_fig(1) = figure('visible','off'); % figure is not displayed
-    imagesc(squeeze(res_matrix'));
-    hold on;
-    plot(points(idx(1)),points(idx(2)),'x','LineWidth',4,'MarkerSize',10,'Color','white');
-    
-    ylabel(labelNameY);
-    xlabel(labelNameX);
-    set(gca,'XTickLabel',labelTickX);
-    set(gca,'YTickLabel',labelTickY);
-    set(gca,'XTick',xTick);
-    set(gca,'YTick',yTick);
-    h_colorbar = colorbar(gca);
-    set(get(h_colorbar,'YLabel'),'String','Mean absolute error (rows)');
-    testname = param.layer_tracker.layer_params.layerdata_source;
-    img_fn = fullfile(img_dir,sprintf('%03d_%s_%s_%s.%s',layer_idx,testname,labelNameX,labelNameY,img_format));
-    ct_saveas(h_fig(1),img_fn);
-    
+  x = 1:length(res_mat); % x tick
+  figure;
+  plot(x,res_mat);
+  hold on;
+  for i = 1:length(res_mat)
+      plot(x(i),res_mat(i), 'r*');
   end
+  plot(x(points(1)),res_mat(points(1)), 'ko');
+  set(gca,'XTick',x);
 end
+
 
 % if param.layer_tracker.track{1}.flag == 1  
 %   for layer_idx = 1:num_layers

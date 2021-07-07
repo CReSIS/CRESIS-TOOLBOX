@@ -20,12 +20,12 @@ params = read_param_xls(ct_filename_param('rds_param_2014_Greenland_P3.xls'));
 
 params = ct_set_params(params,'cmd.generic',0);
 params = ct_set_params(params,'cmd.generic',1,'day_seg','20140313_08');
-params = ct_set_params(params,'cmd.frms',[]); % Specify specific frames (or leave empty/undefined to do all frames)
+params = ct_set_params(params,'cmd.frms',[1]); % Specify specific frames (or leave empty/undefined to do all frames)
 % params = ct_set_params(params,'cmd.generic',1,'day_seg','20110331_02');
 % params = ct_set_params(params,'cmd.frms',19); % Specify specific frames (or leave empty/undefined to do all frames)
 
-% param_override.layer_tracker.debug_plots = {'tracked_images'};
-param_override.layer_tracker.debug_plots = {'tracked_images','visible'}; % Uncomment for debugging
+ param_override.layer_tracker.debug_plots = {'tracked_images'};
+% param_override.layer_tracker.debug_plots = {'tracked_images','visible'}; % Uncomment for debugging
 
 param_override.layer_tracker.echogram_img = 0; % To choose an image besides the base (0) image
 % echogram_source: location of echogram data used for tracking
@@ -38,7 +38,7 @@ param_override.layer_tracker.echogram_source = 'CSARP_post/standard';
 % opsCopyLayers.m
 param_override.layer_tracker.layer_params = [];
 % Uncomment to enable layerdata storage
-param_override.layer_tracker.layer_params.layerdata_source = 'layer_test';
+param_override.layer_tracker.layer_params.layerdata_source = 'layer_vitAnj';
 % Uncomment to enable OPS storage
 % param_override.layer_tracker.layer_params.source = 'ops';
 
@@ -63,7 +63,7 @@ switch ct_output_dir(params(1).radar_name)
     %% RDS
     
     %% RDS: Surface tracking
-    if 1
+    if 0
       track.profile = 'rds';
       
       track.layer_names                 = {'surface'};
@@ -126,6 +126,10 @@ switch ct_output_dir(params(1).radar_name)
       end
     end
     
+<<<<<<< HEAD
+    %% RDS: Viterbi
+    if 1
+=======
     %% RDS: Surface tracking (DEM)
     % Use DEM and LIDAR with no automated tracking (use this when the
     % echogram data are bad and no tracking is possible)
@@ -147,8 +151,9 @@ switch ct_output_dir(params(1).radar_name)
     
     %% RDS: Viterbi bottom
     if 0
+>>>>>>> 22379f92ab59cf9acb19f372394c0cc1774fd2d4
       track.method                      = 'viterbi';
-      track.layer_names                 = {'bottom'};
+      track.layer_names                 = {'bottomA'};
       
       track.min_bin = struct('name','tomo_top');
       track.max_bin = struct('name','tomo_bottom');
@@ -158,9 +163,9 @@ switch ct_output_dir(params(1).radar_name)
       % track.crossover.gps_time_good_eval = @(x) true; % All cross overs are good
       track.crossover.gps_time_good_eval = @(x) x < datenum_to_epoch(datenum('2014/03/01')); % Cross overs before this date are good
       
-      if 1
+      if 0
         track.ice_mask.en = false;
-      elseif 0
+      elseif 1
         % Greenland
         track.ice_mask.en = true;
         track.ice_mask.type = 'geotiff';
